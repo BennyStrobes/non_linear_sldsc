@@ -47,9 +47,9 @@ def create_variant_to_genomic_annotation_mapping(chrom_annotation_file):
 			continue
 		short_variant_id = 'chr' + data[0] + '_' + data[1]
 		annotations = np.asarray(data[4:]).astype(float)
-		if short_variant_id in dicti:
-			print('assumption eroror')
-			pdb.set_trace()
+		#if short_variant_id in dicti:
+			#print('assumption eroror')
+			#pdb.set_trace()
 		dicti[short_variant_id] = annotations
 	f.close()
 	return anno_names, dicti

@@ -44,6 +44,9 @@ output_root="/n/groups/price/ben/non_linear_sldsc/"
 # Directory containing preprocessed data for non-linear sldsc analysis
 preprocessed_data_for_non_linear_sldsc_dir=$output_root"preprocessed_data_for_non_linear_sldsc/"
 
+# Directory containing non-linear sldsc analysis
+non_linear_sldsc_results_dir=$output_root"non_linear_sldsc_results/"
+
 
 ##################
 # Analysis
@@ -76,8 +79,12 @@ if false; then
 sh preprocess_data_for_non_linear_sldsc.sh $ukbb_preprocessed_for_genome_wide_susie_dir $ldsc_baseline_ld_hg38_annotation_dir $preprocessed_data_for_non_linear_sldsc_dir $trait_name
 fi
 
+########################################
+# # Run non-linear S-LDSC analysis
+########################################
+trait_name="blood_WHITE_COUNT"
 
-
+sh run_non_linear_sldsc.sh $trait_name $preprocessed_data_for_non_linear_sldsc_dir $non_linear_sldsc_results_dir
 
 
 
