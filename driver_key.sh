@@ -21,6 +21,9 @@ gtex_genotype_dir="/n/groups/price/ben/eqtl_informed_prs/gtex_v8_meta_analysis_e
 # Genotype data from 1KG
 ref_1kg_genotype_dir="/n/groups/price/ldsc/reference_files/1000G_EUR_Phase3_hg38/plink_files/"
 
+# LDSC baselineLD annotations (hg38)
+ldsc_baseline_ld_hg38_annotation_dir="/n/groups/price/ldsc/reference_files/1000G_EUR_Phase3_hg38/baselineLD_v2.2/"
+
 
 ##################
 # Output data
@@ -34,6 +37,12 @@ ukbb_sumstats_hg38_dir=$old_output_root"ukbb_sumstats_hg38/"
 # Directory containing UKBB sumstats for genome-wide susie
 ukbb_preprocessed_for_genome_wide_susie_dir=$old_output_root"ukbb_preprocessed_for_genome_wide_susie/"
 
+
+# Output root
+output_root="/n/groups/price/ben/non_linear_sldsc/"
+
+# Directory containing preprocessed data for non-linear sldsc analysis
+preprocessed_data_for_non_linear_sldsc_dir=$output_root"preprocessed_data_for_non_linear_sldsc/"
 
 
 ##################
@@ -57,7 +66,18 @@ if false; then
 sh preprocess_data_for_genome_wide_ukbb_susie_analysis.sh $ukbb_sumstats_hg38_dir $gtex_genotype_dir $ref_1kg_genotype_dir $ukbb_preprocessed_for_genome_wide_susie_dir
 fi
 
-echo $ukbb_preprocessed_for_genome_wide_susie_dir
+
+
+########################################
+# # Preprocess data for non-linear S-LDSC analysis
+########################################
+trait_name="blood_WHITE_COUNT"
+if false; then
+sh preprocess_data_for_non_linear_sldsc.sh $ukbb_preprocessed_for_genome_wide_susie_dir $ldsc_baseline_ld_hg38_annotation_dir $preprocessed_data_for_non_linear_sldsc_dir $trait_name
+fi
+
+
+
 
 
 
