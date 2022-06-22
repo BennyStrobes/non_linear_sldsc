@@ -15,7 +15,7 @@ trait_name="$5"
 
 module load gcc/6.2.0
 module load python/3.6.0
-source /n/groups/price/ben/environments/tensor_flow/bin/activate
+source /n/groups/price/ben/environments/tensor_flow_cpu/bin/activate
 
 
 python3 preprocess_data_for_non_linear_sldsc_per_chrom.py $ukbb_preprocessed_for_genome_wide_susie_dir $ldsc_baseline_ld_hg38_annotation_dir $preprocessed_data_for_non_linear_sldsc_dir $chrom_num $trait_name

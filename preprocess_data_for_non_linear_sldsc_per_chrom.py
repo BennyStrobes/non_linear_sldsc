@@ -68,6 +68,7 @@ def generate_rss_likelihood_relevent_statistics(beta_scaled, beta_se_scaled, tra
 	s_squared_vec = np.square(beta_se_scaled) + (np.square(beta_scaled)/trait_sample_size)
 	s_vec = np.sqrt(s_squared_vec)
 	S_mat = np.diag(s_vec)
+
 	S_inv_mat = np.diag(1.0/s_vec)
 	S_inv_2_mat = np.diag(1.0/np.square(s_vec))
 	# Compute (S^-1)R(S^-1) taking advantage of fact that S^-1 is a diagonal matrix
@@ -77,7 +78,7 @@ def generate_rss_likelihood_relevent_statistics(beta_scaled, beta_se_scaled, tra
 	s_inv_2_diag = np.diag(S_inv_2_mat)
 	D_diag = np.diag(D_mat)
 
-	return srs_inv_mat, s_inv_2_diag, D_diag
+	return srs_inv_mat, s_inv_2_diag, D_diag, D_mat
 
 
 def extract_middle_variant_indices(variant_ids, window_start, window_end):
@@ -116,7 +117,7 @@ annotation_names, variant_to_genomic_annotations = create_variant_to_genomic_ann
 # Open file handle for output file
 output_window_file = output_dir + trait_name + '_genome_wide_susie_windows_and_non_linear_sldsc_processed_data_chrom_' + chrom_num + '.txt'
 t = open(output_window_file,'w')
-t.write('window_name' + '\tvariant_id\tsrs_inv\ts_inv_2_diag\tD_diag\tbeta\tgenomic_annotation\tmiddle_variant_indices\n')
+t.write('window_name' + '\tvariant_id\tsrs_inv\ts_inv_2_diag\tD_diag\tbeta\tgenomic_annotation\tmiddle_variant_indices\tbeta_se\tLD\tD\n')
 
 # Open file handle for input file
 input_window_file = ukbb_preprocessed_for_genome_wide_susie_dir + 'genome_wide_susie_windows_and_processed_data_chrom_' + chrom_num + '.txt'
@@ -195,7 +196,7 @@ for line in f:
 	beta_scaled, beta_se_scaled = convert_to_standardized_summary_statistics(betas, beta_std_errs, trait_sample_size, ld)
 
 	# Extract data objects use for running rss likelihood
-	srs_inv, s_inv_2_diag, D_diag = generate_rss_likelihood_relevent_statistics(beta_scaled, beta_se_scaled, trait_sample_size, ld)
+	srs_inv, s_inv_2_diag, D_diag, D_mat = generate_rss_likelihood_relevent_statistics(beta_scaled, beta_se_scaled, trait_sample_size, ld)
 	
 
 	# Extract indices of middle variants
@@ -235,6 +236,10 @@ for line in f:
 	beta_output_file = window_output_root + 'beta.npy'
 	np.save(beta_output_file, beta_scaled)
 
+	# beta-se-scaled
+	beta_se_output_file = window_output_root + 'beta_se.npy'
+	np.save(beta_se_output_file, beta_se_scaled)
+
 	# genomic annotations
 	genomic_anno_output_file = window_output_root + 'genomic_anno.npy'
 	np.save(genomic_anno_output_file, genomic_anno_mat)
@@ -243,8 +248,17 @@ for line in f:
 	middle_window_output_file = window_output_root + 'middle_window_variants.npy'
 	np.save(middle_window_output_file, middle_variant_indices)
 
+	# LD matrix
+	ld_matrix_output_file = window_output_root + 'ld.npy'
+	np.save(ld_matrix_output_file, ld)
+
+	# D matrix
+	D_matrix_output_file = window_output_root + 'D.npy'
+	np.save(D_matrix_output_file, D_mat)
+
+
 	# Print file names to global output file
-	t.write(window_name + '\t' + variant_id_output_file + '\t' + srs_inv_output_file + '\t' + s_inv_2_diag_output_file + '\t' + D_diag_output_file + '\t' + beta_output_file + '\t' + genomic_anno_output_file + '\t' + middle_window_output_file + '\n')
+	t.write(window_name + '\t' + variant_id_output_file + '\t' + srs_inv_output_file + '\t' + s_inv_2_diag_output_file + '\t' + D_diag_output_file + '\t' + beta_output_file + '\t' + genomic_anno_output_file + '\t' + middle_window_output_file + '\t' + beta_se_output_file + '\t' + ld_matrix_output_file + '\t' + D_matrix_output_file + '\n')
 
 f.close()
 t.close()

@@ -82,9 +82,50 @@ fi
 ########################################
 # # Run non-linear S-LDSC analysis
 ########################################
+
 trait_name="blood_WHITE_COUNT"
+samp_size="326723"
+model_type="neural_network"
+if false; then
+sbatch run_non_linear_sldsc.sh $trait_name $preprocessed_data_for_non_linear_sldsc_dir $non_linear_sldsc_results_dir $model_type $samp_size
+fi
 
-sh run_non_linear_sldsc.sh $trait_name $preprocessed_data_for_non_linear_sldsc_dir $non_linear_sldsc_results_dir
+model_type="linear_model"
+if false; then
+sbatch run_non_linear_sldsc.sh $trait_name $preprocessed_data_for_non_linear_sldsc_dir $non_linear_sldsc_results_dir $model_type $samp_size
+fi
 
 
+########################################
+# # Run non-linear S-LDSC analysis w multivariate updates
+########################################
+trait_name="blood_WHITE_COUNT"
+samp_size="326723"
+model_type="neural_network"
+if false; then
+sbatch run_non_linear_sldsc_multivariate_updates.sh $trait_name $preprocessed_data_for_non_linear_sldsc_dir $non_linear_sldsc_results_dir $model_type $samp_size
+fi
+
+trait_name="blood_WHITE_COUNT"
+samp_size="326723"
+model_type="linear_model"
+if false; then
+sbatch run_non_linear_sldsc_multivariate_updates.sh $trait_name $preprocessed_data_for_non_linear_sldsc_dir $non_linear_sldsc_results_dir $model_type $samp_size
+fi
+
+trait_name="blood_WHITE_COUNT"
+samp_size="326723"
+model_type="intercept_model"
+if false; then
+sbatch run_non_linear_sldsc_multivariate_updates.sh $trait_name $preprocessed_data_for_non_linear_sldsc_dir $non_linear_sldsc_results_dir $model_type $samp_size
+fi
+
+
+
+
+
+
+trait_name="blood_WHITE_COUNT"
+samp_size="326723"
+sh temp_debugger.sh $trait_name $preprocessed_data_for_non_linear_sldsc_dir $non_linear_sldsc_results_dir $samp_size
 
