@@ -32,7 +32,7 @@ def convert_to_standardized_summary_statistics(gwas_beta_raw, gwas_beta_se_raw, 
 	beta_scaled = (1/dXtX2)*Xty
 	beta_se_scaled = np.sqrt(sigma2/dXtX2)
 
-	return beta_scaled, beta_se_scaled
+	return beta_scaled, beta_se_scaled, XtX, Xty
 
 def create_variant_to_genomic_annotation_mapping(chrom_annotation_file):
 	f = gzip.open(chrom_annotation_file)
@@ -71,6 +71,7 @@ def generate_rss_likelihood_relevent_statistics(beta_scaled, beta_se_scaled, tra
 
 	S_inv_mat = np.diag(1.0/s_vec)
 	S_inv_2_mat = np.diag(1.0/np.square(s_vec))
+
 	# Compute (S^-1)R(S^-1) taking advantage of fact that S^-1 is a diagonal matrix
 	D_mat = np.multiply(np.multiply(np.diag(S_inv_mat)[:, None], ld), np.diag(S_inv_mat))
 	# Compute (S)R(S^-1) taking advantage of fact that S and S^-1 is a diagonal matrix
@@ -101,6 +102,71 @@ def extract_middle_variant_indices(variant_ids, window_start, window_end):
 	return np.asarray(middle_indices)
 
 
+def debugger(XtX_special, Xty):
+	expected_tau = 1000000.0
+	num_snps = len(Xty)
+	print(num_snps)
+	for itera in range(100):
+		S = np.linalg.inv( np.diag(np.ones(num_snps)*expected_tau) + XtX_special )
+		mu = np.dot(S, Xty)
+
+		tau_a = num_snps/2.0
+		tau_b = 0.5*np.sum(np.square(mu) + np.diag(S))
+		expected_tau = tau_a/tau_b
+		print(expected_tau)
+
+def debug_extract_alt_betas(betas_orig, beta_std_errs_orig, ld, variant_ids, chrom_num):
+	dicti = {}
+	f = open('/n/groups/price/ben/non_linear_sldsc/non_bolt_lmm_hg38_sumstats/blood_WHITE_COUNT_hg38_liftover.bgen.stats')
+	head_count = 0
+	for line in f:
+		line = line.rstrip()
+		data = line.split('\t')
+		if head_count == 0:
+			head_count = head_count + 1
+			print(data)
+			continue
+		if data[1] != chrom_num:
+			continue
+		variant_id_1 = 'chr' + data[1] + '_' + data[2] + '_' + data[3] + '_' + data[4]
+		variant_id_2 = 'chr' + data[1] + '_' + data[2] + '_' + data[4] + '_' + data[3]
+		beta = float(data[7])
+		se = float(data[8])
+		new_trait_samp_size = int(data[10])
+		dicti[variant_id_1] = (beta,se)
+		dicti[variant_id_2] = (beta,se)
+	f.close()
+
+	valid_indices = []
+	new_betas = []
+	new_beta_se = []
+	for variant_iter, variant_id in enumerate(variant_ids):
+		if variant_id not in dicti:
+			continue
+		valid_indices.append(variant_iter)
+		unsigned_beta = np.abs(dicti[variant_id][0])
+		unsigned_beta_se = dicti[variant_id][1]
+		if betas_orig[variant_iter] < 0.0:
+			signed_beta = unsigned_beta*-1.0
+		else:
+			signed_beta = unsigned_beta*1.0
+		new_betas.append(signed_beta)
+		new_beta_se.append(unsigned_beta_se)
+
+
+	# NEW DATA
+	new_betas = np.asarray(new_betas)
+	new_beta_se = np.asarray(new_beta_se)
+	valid_indices = np.asarray(valid_indices)
+	new_variant_ids = variant_ids[valid_indices]
+	new_ld = ld[valid_indices,:][:,valid_indices]
+
+
+	new_beta_scaled, new_beta_se_scaled, new_XtX_special, new_Xty = convert_to_standardized_summary_statistics(new_betas, new_beta_se, new_trait_samp_size, new_ld)
+
+	new_srs_inv, new_s_inv_2_diag, new_D_diag, new_D_mat = generate_rss_likelihood_relevent_statistics(new_beta_scaled, new_beta_se_scaled, new_trait_samp_size, new_ld)
+
+	debugger(new_D_mat, (new_s_inv_2_diag*new_beta_scaled))
 
 
 ukbb_preprocessed_for_genome_wide_susie_dir = sys.argv[1]  # Input dir
@@ -193,11 +259,18 @@ for line in f:
 	# Prepare data
 	##############################
 	# Scale summary statistics so it was though they were run with standardized genotype
-	beta_scaled, beta_se_scaled = convert_to_standardized_summary_statistics(betas, beta_std_errs, trait_sample_size, ld)
+	beta_scaled, beta_se_scaled, XtX_special, Xty = convert_to_standardized_summary_statistics(betas, beta_std_errs, trait_sample_size, ld)
 
 	# Extract data objects use for running rss likelihood
 	srs_inv, s_inv_2_diag, D_diag, D_mat = generate_rss_likelihood_relevent_statistics(beta_scaled, beta_se_scaled, trait_sample_size, ld)
-	
+	#srs_inv, s_inv_2_diag, D_diag, D_mat = generate_rss_likelihood_relevent_statistics(betas, beta_std_errs, trait_sample_size, ld)
+	#f len(Xty) > 4000:
+		#debugger(D_mat, (s_inv_2_diag*betas))
+		#debugger(ld, (s_inv_2_diag*betas))
+	#if len(beta_scaled) > 4000:
+		#debug_extract_alt_betas(betas, beta_std_errs, ld, variant_ids, chrom_num)
+
+
 
 	# Extract indices of middle variants
 	middle_variant_indices = extract_middle_variant_indices(variant_ids, window_start, window_end)

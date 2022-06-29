@@ -36,6 +36,12 @@ def get_training_chromosomes(training_chromosome_type):
 			if chrom_num == 5:
 				training_chromosomes[chrom_num] = 1
 		return training_chromosomes
+	elif training_chromosome_type == 'chrom_21':
+		training_chromosomes = {}
+		for chrom_num in range(1,23):
+			if chrom_num == 21:
+				training_chromosomes[chrom_num] = 1
+		return training_chromosomes
 	elif training_chromosome_type == 'chrom_1_18':
 		training_chromosomes = {}
 		for chrom_num in range(1,23):
@@ -155,6 +161,8 @@ def load_in_data(input_dir, trait_name, training_chromosomes):
 	srs_inv = []
 	s_inv_2_diag = []
 	D_mat = []
+	D_diag = []
+
 	beta = []
 	beta_se = []
 	ld = []
@@ -196,6 +204,7 @@ def load_in_data(input_dir, trait_name, training_chromosomes):
 			srs_inv.append(data[2])
 			s_inv_2_diag.append(data[3])
 			D_mat.append(data[10])
+			D_diag.append(data[4])
 			beta.append(data[5])
 			genomic_annotation.append(data[6])
 			middle_variant_indices.append(data[7])
@@ -213,7 +222,7 @@ def load_in_data(input_dir, trait_name, training_chromosomes):
 		print('assumption error')
 		pdb.set_trace()
 	# Put data in pandas df
-	dd = {'window_name': window_names, 'variant_id_file': variant_id, 'srs_inv_file':srs_inv, 's_inv_2_diag_file':s_inv_2_diag, 'D_mat_file': D_mat, 'beta_file': beta, 'genomic_annotation_file':genomic_annotation, 'middle_variant_indices_file':middle_variant_indices, 'beta_se_file': beta_se, 'ld_file':ld}
+	dd = {'window_name': window_names, 'variant_id_file': variant_id, 'srs_inv_file':srs_inv, 's_inv_2_diag_file':s_inv_2_diag, 'D_mat_file': D_mat, 'beta_file': beta, 'genomic_annotation_file':genomic_annotation, 'middle_variant_indices_file':middle_variant_indices, 'beta_se_file': beta_se, 'ld_file':ld, 'D_diag_file': D_diag}
 	df = pd.DataFrame(data=dd)
 
 	return df, window_to_beta_mu, window_to_beta_var, window_to_gamma
@@ -253,10 +262,9 @@ def update_beta_distribution_in_single_window(window_name, window_s_inv_2_diag_f
 
 
 	#diff=genomic_anno_to_gamma_model.predict(genomic_anno) - tf.math.softplus(tf.matmul(tf.nn.relu(tf.matmul(tf.nn.relu(tf.matmul(genomic_anno, weights[0]) + weights[1]), weights[2]) + weights[3]), weights[4]) + weights[5])
-	if vi_iter < 2:
-		gamma = np.ones(len(window_marginal_betas))*1e-7
+	if weights == None:
+		gamma = np.ones(len(window_marginal_betas))*1e-5
 	else:
-		#gamma = weights.predict(genomic_anno)
 		if model_type == 'neural_network':
 			gamma = softplus_np(np.dot(relu_np(np.dot(relu_np(np.dot(genomic_anno, weights[0]) + weights[1]), weights[2]) + weights[3]), weights[4]) + weights[5])
 			gamma = gamma[:,0]
@@ -280,24 +288,189 @@ def update_beta_distribution_in_single_window(window_name, window_s_inv_2_diag_f
 	beta_squared_train = beta_squared[middle_indices]
 	genomic_anno_train = genomic_anno[middle_indices,:]
 
-
 	return (beta_squared_train, genomic_anno_train)
+
+def update_beta_distribution_in_single_window_temp(window_name, window_s_inv_2_diag_file, window_D_mat_file, window_marginal_betas_file, window_genomic_annotation_file, window_middle_variant_indices_file, vi_iter, weights, model_type):
+	#window_srs_inv = np.load(window_srs_inv_file)
+	window_s_inv_2_diag = np.load(window_s_inv_2_diag_file)
+	window_D_mat = np.load(window_D_mat_file)
+	window_marginal_betas = np.load(window_marginal_betas_file)
+	genomic_anno = np.load(window_genomic_annotation_file)
+
+
+	#diff=genomic_anno_to_gamma_model.predict(genomic_anno) - tf.math.softplus(tf.matmul(tf.nn.relu(tf.matmul(tf.nn.relu(tf.matmul(genomic_anno, weights[0]) + weights[1]), weights[2]) + weights[3]), weights[4]) + weights[5])
+	if weights == None:
+		gamma = np.ones(len(window_marginal_betas))*1e-5
+	else:
+		if model_type == 'neural_network':
+			gamma = softplus_np(np.dot(relu_np(np.dot(relu_np(np.dot(genomic_anno, weights[0]) + weights[1]), weights[2]) + weights[3]), weights[4]) + weights[5])
+			gamma = gamma[:,0]
+		elif model_type == 'linear_model':
+			gamma = softplus_np(np.dot(genomic_anno, weights[0]) + weights[1])
+			gamma = gamma[:,0]
+		elif model_type == 'intercept_model':
+			genomic_anno = np.ones((genomic_anno.shape[0],1))
+			gamma = softplus_np(np.dot(genomic_anno, weights[0]) + weights[1])
+			gamma = gamma[:,0]
+
+	print(gamma)
+
+	beta_mu, beta_covariance = multivariate_updates(gamma, window_D_mat, window_s_inv_2_diag, window_marginal_betas)
+	beta_var = np.diag(beta_covariance)
+
+	beta_squared = np.square(beta_mu) + beta_var
+
+	
+	middle_indices = np.load(window_middle_variant_indices_file)
+
+	# Add to training data objects
+	beta_squared_train = beta_squared[middle_indices]
+	genomic_anno_train = genomic_anno[middle_indices,:]
+
+	return (beta_mu, beta_var)
+
+def update_beta_distribution_in_single_window_temp2(window_name, window_s_inv_2_diag_file, window_D_mat_file, window_marginal_betas_file, window_genomic_annotation_file, window_middle_variant_indices_file, vi_iter, weights, model_type, window_srs_inv_file, window_D_diag_file):
+	#window_srs_inv = np.load(window_srs_inv_file)
+	window_s_inv_2_diag = np.load(window_s_inv_2_diag_file)
+	window_D_mat = np.load(window_D_mat_file)
+	window_marginal_betas = np.load(window_marginal_betas_file)
+	genomic_anno = np.load(window_genomic_annotation_file)
+	window_srs_inv = np.load(window_srs_inv_file)
+	window_D_diag = np.load(window_D_diag_file)
+
+
+	#diff=genomic_anno_to_gamma_model.predict(genomic_anno) - tf.math.softplus(tf.matmul(tf.nn.relu(tf.matmul(tf.nn.relu(tf.matmul(genomic_anno, weights[0]) + weights[1]), weights[2]) + weights[3]), weights[4]) + weights[5])
+	if weights == None:
+		gamma = np.ones(len(window_marginal_betas))*1e-5
+	else:
+		if model_type == 'neural_network':
+			gamma = softplus_np(np.dot(relu_np(np.dot(relu_np(np.dot(genomic_anno, weights[0]) + weights[1]), weights[2]) + weights[3]), weights[4]) + weights[5])
+			gamma = gamma[:,0]
+		elif model_type == 'linear_model':
+			gamma = softplus_np(np.dot(genomic_anno, weights[0]) + weights[1])
+			gamma = gamma[:,0]
+		elif model_type == 'intercept_model':
+			genomic_anno = np.ones((genomic_anno.shape[0],1))
+			gamma = softplus_np(np.dot(genomic_anno, weights[0]) + weights[1])
+			gamma = gamma[:,0]
+
+	print(gamma)
+
+	beta_mu_multivar, beta_covariance = multivariate_updates(gamma, window_D_mat, window_s_inv_2_diag, window_marginal_betas)
+	beta_var_multivar = np.diag(beta_covariance)
+	num_snps = len(window_marginal_betas)
+	beta_mu = np.zeros(num_snps)
+	beta_var = np.ones(num_snps)
+
+	# Marginal betas will all effects removed
+	residual = window_marginal_betas - np.dot(window_srs_inv, beta_mu)
+
+	# Loop through snps
+	for vi_iter in range(200):
+		for k_index in range(num_snps):
+
+			# get marginal betas with all effects removed other than the snp of interest
+			residual = residual + window_srs_inv[:, k_index]*beta_mu[k_index]
+
+			# Calculate terms involved in the update
+			b_term = residual[k_index]*window_s_inv_2_diag[k_index]
+			a_term = (-.5*window_D_diag[k_index]) - (.5/gamma[k_index])
+
+			# VI Updates
+			beta_var[k_index] = -1.0/(2.0*a_term)
+			beta_mu[k_index] = b_term*beta_var[k_index]
+
+			# Update resid for next round (after this resid includes effects of all genes)
+			residual = residual - window_srs_inv[:,k_index]*beta_mu[k_index]
+
+
+	pdb.set_trace()
+
+
+
+	return
+
+
+
+def update_beta_distribution_in_single_window_temp_univariate(window_name, window_srs_inv_file, window_s_inv_2_diag_file, window_D_diag_file, window_marginal_betas_file, beta_mu, beta_var, gamma, weights, model_type, window_genomic_annotation_file):
+	window_srs_inv = np.load(window_srs_inv_file)
+	window_s_inv_2_diag = np.load(window_s_inv_2_diag_file)
+	window_D_diag = np.load(window_D_diag_file)
+	window_marginal_betas = np.load(window_marginal_betas_file)
+	genomic_anno = np.load(window_genomic_annotation_file)
+	# UPDATES for this window
+	num_snps = len(window_marginal_betas)
+
+	beta_mu = np.zeros(num_snps)
+	beta_var = np.ones(num_snps)
+
+
+
+	#diff=genomic_anno_to_gamma_model.predict(genomic_anno) - tf.math.softplus(tf.matmul(tf.nn.relu(tf.matmul(tf.nn.relu(tf.matmul(genomic_anno, weights[0]) + weights[1]), weights[2]) + weights[3]), weights[4]) + weights[5])
+	if weights == None:
+		gamma = np.ones(len(window_marginal_betas))*1e-5
+	else:
+		if model_type == 'neural_network':
+			gamma = softplus_np(np.dot(relu_np(np.dot(relu_np(np.dot(genomic_anno, weights[0]) + weights[1]), weights[2]) + weights[3]), weights[4]) + weights[5])
+			gamma = gamma[:,0]
+		elif model_type == 'linear_model':
+			gamma = softplus_np(np.dot(genomic_anno, weights[0]) + weights[1])
+			gamma = gamma[:,0]
+		elif model_type == 'intercept_model':
+			genomic_anno = np.ones((genomic_anno.shape[0],1))
+			gamma = softplus_np(np.dot(genomic_anno, weights[0]) + weights[1])
+			gamma = gamma[:,0]
+
+	print(gamma)
+
+	# Marginal betas will all effects removed
+	residual = window_marginal_betas - np.dot(window_srs_inv, beta_mu)
+
+	# Loop through snps
+	for vi_iter in range(100):
+		for k_index in range(num_snps):
+
+			# get marginal betas with all effects removed other than the snp of interest
+			residual = residual + window_srs_inv[:, k_index]*beta_mu[k_index]
+
+			# Calculate terms involved in the update
+			b_term = residual[k_index]*window_s_inv_2_diag[k_index]
+			a_term = (-.5*window_D_diag[k_index]) - (.5/gamma[k_index])
+
+			# VI Updates
+			beta_var[k_index] = -1.0/(2.0*a_term)
+			beta_mu[k_index] = b_term*beta_var[k_index]
+
+			# Update resid for next round (after this resid includes effects of all genes)
+			residual = residual - window_srs_inv[:,k_index]*beta_mu[k_index]
+	return (beta_mu, beta_var)
 
 
 def fast_update_beta_distributions(window_data, genomic_anno_to_gamma_model, vi_iter, subset_iter, model_type, parallel_bool=True):
 	# Get number of windows
 	num_windows = window_data.shape[0]
 
-	weights = genomic_anno_to_gamma_model.get_weights()
+	if genomic_anno_to_gamma_model == None:
+		weights = None
+	else:
+		weights = genomic_anno_to_gamma_model.get_weights()
+
+	if vi_iter >= 0:
+		window_iter = 0
+		update_beta_distribution_in_single_window_temp2(window_data.iloc[window_iter]['window_name'], window_data.iloc[window_iter]['s_inv_2_diag_file'], window_data.iloc[window_iter]['D_mat_file'], window_data.iloc[window_iter]['beta_file'], window_data.iloc[window_iter]['genomic_annotation_file'], window_data.iloc[window_iter]['middle_variant_indices_file'], vi_iter, weights, model_type, window_data.iloc[window_iter]['srs_inv_file'], window_data.iloc[window_iter]['D_diag_file'])
+		aa = update_beta_distribution_in_single_window_temp(window_data.iloc[window_iter]['window_name'], window_data.iloc[window_iter]['s_inv_2_diag_file'], window_data.iloc[window_iter]['D_mat_file'], window_data.iloc[window_iter]['beta_file'], window_data.iloc[window_iter]['genomic_annotation_file'], window_data.iloc[window_iter]['middle_variant_indices_file'], vi_iter, weights, model_type)
+		bb = update_beta_distribution_in_single_window_temp_univariate(window_data['window_name'][window_iter], window_data['srs_inv_file'][window_iter], window_data['s_inv_2_diag_file'][window_iter], window_data['D_diag_file'][window_iter], window_data['beta_file'][window_iter], window_to_beta_mu[window_data['window_name'][window_iter]], window_to_beta_var[window_data['window_name'][window_iter]], window_to_gamma[window_data['window_name'][window_iter]], weights, model_type, window_data.iloc[window_iter]['genomic_annotation_file'])
+		pdb.set_trace()
 
 	if parallel_bool == False:
 		beta_data = []
 		# Now loop through windows
 		for window_iter in range(num_windows):
 			beta_data.append(update_beta_distribution_in_single_window(window_data.iloc[window_iter]['window_name'], window_data.iloc[window_iter]['s_inv_2_diag_file'], window_data.iloc[window_iter]['D_mat_file'], window_data.iloc[window_iter]['beta_file'], window_data.iloc[window_iter]['genomic_annotation_file'], window_data.iloc[window_iter]['middle_variant_indices_file'], vi_iter, weights, model_type))
+			#aa = update_beta_distribution_in_single_window(window_data.iloc[window_iter]['window_name'], window_data.iloc[window_iter]['s_inv_2_diag_file'], window_data.iloc[window_iter]['D_mat_file'], window_data.iloc[window_iter]['beta_file'], window_data.iloc[window_iter]['genomic_annotation_file'], window_data.iloc[window_iter]['middle_variant_indices_file'], vi_iter, weights, model_type)
+			#bb = update_beta_distribution_in_single_window2(window_data['window_name'][window_iter], window_data['srs_inv_file'][window_iter], window_data['s_inv_2_diag_file'][window_iter], window_data['D_diag_file'][window_iter], window_data['beta_file'][window_iter], window_to_beta_mu[window_data['window_name'][window_iter]], window_to_beta_var[window_data['window_name'][window_iter]], window_to_gamma[window_data['window_name'][window_iter]], weights, model_type, window_data.iloc[window_iter]['genomic_annotation_file'])
 	elif parallel_bool == True:
 		beta_data = Parallel(n_jobs=20)(delayed(update_beta_distribution_in_single_window)(window_data.iloc[window_iter]['window_name'], window_data.iloc[window_iter]['s_inv_2_diag_file'], window_data.iloc[window_iter]['D_mat_file'], window_data.iloc[window_iter]['beta_file'], window_data.iloc[window_iter]['genomic_annotation_file'], window_data.iloc[window_iter]['middle_variant_indices_file'], vi_iter, weights, model_type) for window_iter in range(num_windows))
-		#beta_data = Parallel(n_jobs=20)(delayed(update_beta_distribution_in_single_window)(window_data['window_name'][window_iter], window_data['srs_inv_file'][window_iter], window_data['s_inv_2_diag_file'][window_iter], window_data['D_mat_file'][window_iter], window_data['beta_file'][window_iter], window_data['genomic_annotation_file'][window_iter], window_data['middle_variant_indices_file'][window_iter], genomic_anno_to_gamma_model, vi_iter) for window_iter in range(num_windows))
 
 
 	# GET ORGANIZED NEURAL NET TRAINING DATA
@@ -380,13 +553,19 @@ def gaussian_neg_log_likelihood_tf_padded_loss(beta_squared_true, gamma_pred):
 	return nll
 
 
+def gaussian_neg_log_likelihood_np_padded_loss(beta_squared_true, gamma_pred):
+	epsilon = 1e-30
+	nll = np.log(gamma_pred + epsilon) + np.divide(beta_squared_true, (gamma_pred+epsilon))
+	return nll
+
+
 def init_non_linear_mapping_from_genomic_annotations_to_gamma(annotation_data_dimension):
 	# Initialize Neural network model
 	model = tf.keras.models.Sequential()
 	model.add(tf.keras.layers.Dense(units=64, activation='relu', input_dim=annotation_data_dimension))
-	model.add(tf.keras.layers.Dropout(0.2))
+	#model.add(tf.keras.layers.Dropout(0.2))
 	model.add(tf.keras.layers.Dense(units=64, activation='relu'))
-	model.add(tf.keras.layers.Dropout(0.2))
+	#model.add(tf.keras.layers.Dropout(0.2))
 	model.add(tf.keras.layers.Dense(units=1, activation='softplus'))
 
 	model.compile(loss=gaussian_neg_log_likelihood_tf_padded_loss, optimizer='adam')
@@ -406,6 +585,35 @@ def get_annotation_data_dimension(window_data):
 	genomic_anno_dim = np.load(window_data['genomic_annotation_file'][0]).shape[1]
 	return genomic_anno_dim
 
+def update_genomic_annotation_to_gamma_model(genome_anno_train, beta_squared_train, annotation_data_dimension, model_type, genomic_anno_to_gamma_model_old, epochs=50):
+	if model_type == 'neural_network':
+		genomic_anno_to_gamma_model = init_non_linear_mapping_from_genomic_annotations_to_gamma(annotation_data_dimension)
+	elif model_type == 'linear_model':
+		genomic_anno_to_gamma_model = init_linear_mapping_from_genomic_annotations_to_gamma(annotation_data_dimension)
+	elif model_type == 'intercept_model':
+		genomic_anno_to_gamma_model = init_linear_mapping_from_genomic_annotations_to_gamma(1)
+		genome_anno_train = np.ones((len(beta_squared_train), 1))
+
+	# Part 2: Update annotations
+	genomic_anno_to_gamma_model.fit(genome_anno_train, beta_squared_train, epochs=epochs)
+
+	curr_tau_pred = genomic_anno_to_gamma_model.predict(genome_anno_train)[:,0]
+	curr_loss = np.sum(gaussian_neg_log_likelihood_np_padded_loss(beta_squared_train, curr_tau_pred))
+
+	if genomic_anno_to_gamma_model_old == None:
+		prev_loss = 1e30 
+	else:
+		prev_loss = np.sum(gaussian_neg_log_likelihood_np_padded_loss(beta_squared_train, genomic_anno_to_gamma_model_old.predict(genome_anno_train)[:,0]))
+	
+	if curr_loss <= prev_loss:
+		print(np.sort(curr_tau_pred))
+		print(np.mean(curr_tau_pred))
+		print(np.median(curr_tau_pred))
+		return genomic_anno_to_gamma_model
+	else:
+		print('Previous model won')
+		return genomic_anno_to_gamma_model_old
+
 
 def non_linear_sldsc(window_data, window_to_beta_mu, window_to_beta_var, window_to_gamma, model_type, temp_output_model_root, max_iterations=200):
 	
@@ -413,22 +621,15 @@ def non_linear_sldsc(window_data, window_to_beta_mu, window_to_beta_var, window_
 	print(annotation_data_dimension)
 		
 
-	if model_type == 'neural_network':
-		#global genomic_anno_to_gamma_model
-		genomic_anno_to_gamma_model = init_non_linear_mapping_from_genomic_annotations_to_gamma(annotation_data_dimension)
-	elif model_type == 'linear_model':
-		#global genomic_anno_to_gamma_model
-		genomic_anno_to_gamma_model = init_linear_mapping_from_genomic_annotations_to_gamma(annotation_data_dimension)
-	elif model_type == 'intercept_model':
-		genomic_anno_to_gamma_model = init_linear_mapping_from_genomic_annotations_to_gamma(1)
-	#genomic_anno_to_gamma_model = None
+	genomic_anno_to_gamma_model = None
 
 	# VI Iterations
 	for vi_iter in range(max_iterations):
 
 		print('VI ITERATION ' + str(vi_iter))
 
-		for subset_iter, window_data_subset in enumerate(np.array_split(window_data,30)):
+
+		for subset_iter, window_data_subset in enumerate(np.array_split(window_data,1)):
 			# Part 1 Update window_to_beta_mu and window_to_beta_mu given current values of window_to_gamma
 			print('Data subset ' + str(subset_iter) + ' start')
 			print(window_data_subset.shape)
@@ -441,11 +642,7 @@ def non_linear_sldsc(window_data, window_to_beta_mu, window_to_beta_var, window_
 				pdb.set_trace()
 
 
-			if model_type == 'intercept_model':
-				genome_anno_train = np.ones((len(beta_squared_train), 1))
-
-			# Part 2: Update annotations
-			genomic_anno_to_gamma_model.train_on_batch(genome_anno_train, beta_squared_train)
+			genomic_anno_to_gamma_model = update_genomic_annotation_to_gamma_model(genome_anno_train, beta_squared_train, annotation_data_dimension, model_type, genomic_anno_to_gamma_model, epochs=10)
 
 			end_time = time.time()
 			print(end_time-start_time)
@@ -547,6 +744,7 @@ print(model_type)
 # load in data
 training_chromosome_type = 'chrom_1_18'
 training_chromosome_type = 'even'
+training_chromosome_type = 'chrom_21'
 training_chromosomes = get_training_chromosomes(training_chromosome_type)
 window_data, window_to_beta_mu, window_to_beta_var, window_to_gamma = load_in_data(input_dir, trait_name, training_chromosomes)
 

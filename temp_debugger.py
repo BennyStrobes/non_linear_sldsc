@@ -27,10 +27,46 @@ def get_training_chromosomes(training_chromosome_type):
 			if chrom_num == 2 or chrom_num == 3:
 				training_chromosomes[chrom_num] = 1
 		return training_chromosomes
+	elif training_chromosome_type == 'chrom_2':
+		training_chromosomes = {}
+		for chrom_num in range(1,23):
+			if chrom_num == 2:
+				training_chromosomes[chrom_num] = 1
+		return training_chromosomes
+	elif training_chromosome_type == 'chrom_1':
+		training_chromosomes = {}
+		for chrom_num in range(1,23):
+			if chrom_num == 1:
+				training_chromosomes[chrom_num] = 1
+		return training_chromosomes
+	elif training_chromosome_type == 'chrom_3':
+		training_chromosomes = {}
+		for chrom_num in range(1,23):
+			if chrom_num == 3:
+				training_chromosomes[chrom_num] = 1
+		return training_chromosomes
 	elif training_chromosome_type == 'chrom_5':
 		training_chromosomes = {}
 		for chrom_num in range(1,23):
 			if chrom_num == 5:
+				training_chromosomes[chrom_num] = 1
+		return training_chromosomes
+	elif training_chromosome_type == 'chrom_7':
+		training_chromosomes = {}
+		for chrom_num in range(1,23):
+			if chrom_num == 7:
+				training_chromosomes[chrom_num] = 1
+		return training_chromosomes
+	elif training_chromosome_type == 'chrom_9':
+		training_chromosomes = {}
+		for chrom_num in range(1,23):
+			if chrom_num == 9:
+				training_chromosomes[chrom_num] = 1
+		return training_chromosomes
+	elif training_chromosome_type == 'chrom_15':
+		training_chromosomes = {}
+		for chrom_num in range(1,23):
+			if chrom_num == 15:
 				training_chromosomes[chrom_num] = 1
 		return training_chromosomes
 	elif training_chromosome_type == 'chrom_1_to_7':
@@ -51,7 +87,7 @@ def get_training_chromosomes(training_chromosome_type):
 			if chrom_num == 12 or chrom_num == 8 or chrom_num == 10 or chrom_num == 14:
 				training_chromosomes[chrom_num] = 1
 		return training_chromosomes
-	elif training_chromosomes == 'odd':
+	elif training_chromosome_type == 'odd':
 		training_chromosomes = {}
 		for chrom_num in range(1,23):
 			if np.mod(chrom_num,2) != 0:
@@ -176,7 +212,7 @@ def gaussian_neg_log_likelihood_tf_padded_loss(beta_squared_true, gamma_pred):
 
 
 
-def calculate_chi_sq_pred(model_pred_tau, ld, samp_size):
+def calculate_chi_sq_pred(model_pred_tau, ld, samp_size, s_inv_2_diag):
 	ld_sq = np.square(ld)
 
 	chi_sq_pred = []
@@ -187,16 +223,16 @@ def calculate_chi_sq_pred(model_pred_tau, ld, samp_size):
 	return np.asarray(chi_sq_pred), ld_sq
 
 def calculate_ld_score_log_likelihood(chi_sq, chi_sq_pred, ld_scores):
-	log_likes = gamma.pdf(chi_sq, .5, scale=2*chi_sq_pred)/ld_scores
+	log_likes = gamma.logpdf(chi_sq, .5, scale=2*chi_sq_pred)/ld_scores
 	return np.asarray(log_likes)
 
 
-def run_ld_score_regression_likelihood_evaluation(testing_window_data, genomic_anno_to_gamma_model, samp_size, output_file):
+def run_ld_score_regression_likelihood_evaluation(testing_window_data, genomic_anno_to_gamma_model, samp_size, output_file, model_type):
 	# Get number of windows
 	num_windows = testing_window_data.shape[0]
 
 	t = open(output_file,'w')
-	t.write('snp\twindow\tobserved_chi_sq\tpred_chi_sq\tldsc_gamma_log_like\tpred_tau\n')
+	t.write('snp\twindow\tobserved_chi_sq\tpred_chi_sq\tldsc_gamma_log_like\tpred_tau\tld_score\n')
 	# Now loop through windows
 	for window_iter in range(num_windows):
 		# Extract relevent info for this window
@@ -208,13 +244,18 @@ def run_ld_score_regression_likelihood_evaluation(testing_window_data, genomic_a
 		marg_beta = np.load(testing_window_data['beta_file'][window_iter])	
 		marg_beta_se = np.load(testing_window_data['beta_se_file'][window_iter])
 		ld = np.load(testing_window_data['ld_file'][window_iter])
+		s_inv_2_diag = np.load(testing_window_data['s_inv_2_diag_file'][window_iter])
+
+
 		chi_sq = np.square(marg_beta/marg_beta_se)
 
-		model_pred_tau = genomic_anno_to_gamma_model.predict(genomic_anno)[:,0]
-
-		pdb.set_trace()
+		if model_type == 'intercept_model':
+			genomic_anno_int = np.ones((genomic_anno.shape[0], 1))
+			model_pred_tau = genomic_anno_to_gamma_model.predict(genomic_anno_int)[:,0]
+		else:
+			model_pred_tau = genomic_anno_to_gamma_model.predict(genomic_anno)[:,0]
 		
-		chi_sq_pred, ld_squared = calculate_chi_sq_pred(model_pred_tau, ld, samp_size)
+		chi_sq_pred, ld_squared = calculate_chi_sq_pred(model_pred_tau, ld, samp_size, s_inv_2_diag)
 
 		ld_scores = np.sum(ld_squared,axis=0)
 
@@ -231,19 +272,37 @@ def run_ld_score_regression_likelihood_evaluation(testing_window_data, genomic_a
 
 
 		for ii in range(len(log_likelihoods)):
-			t.write(variant_ids[ii] + '\t' + window_name + '\t' + str(chi_sq[ii]) + '\t' + str(chi_sq_pred[ii]) + '\t' + str(log_likelihoods[ii]) + '\t' + str(model_pred_tau[ii]) + '\n')
+			t.write(variant_ids[ii] + '\t' + window_name + '\t' + str(chi_sq[ii]) + '\t' + str(chi_sq_pred[ii]) + '\t' + str(log_likelihoods[ii]) + '\t' + str(model_pred_tau[ii]) + '\t' + str(ld_scores[ii]) + '\n')
 	t.close()
+
+def bootstrap_gamma_log_like(gamma_log_like, num_bootstrap_samples):
+	sum_gamma_log_like = np.sum(gamma_log_like)
+	num_samples = len(gamma_log_like)
+	bootstrap_arr = []
+	for bootstrap_sample in np.arange(num_bootstrap_samples):
+		bootstrap_sample_indices = np.random.choice(np.arange(num_samples), size=num_samples)
+		bootstrap_sum_gamma_log_like = np.sum(gamma_log_like[bootstrap_sample_indices])
+		bootstrap_arr.append(bootstrap_sum_gamma_log_like)
+	bootstrap_arr=np.asarray(bootstrap_arr)
+	sum_gamma_log_like_bootstrap_se = np.sqrt(np.sum(np.square(bootstrap_arr-np.mean(bootstrap_arr)))/(num_bootstrap_samples-1))
+	return sum_gamma_log_like, sum_gamma_log_like_bootstrap_se
 
 def likelihood_summary(testing_ldsc_likelihood_output_file):
 	aa = np.loadtxt(testing_ldsc_likelihood_output_file,dtype=str,delimiter='\t')
-	pred_tau = aa[1:,-1].astype(float)
+	pred_tau = aa[1:,5].astype(float)
 	obs_chi_sq = aa[1:,2].astype(float)
 	pred_chi_sq = aa[1:,3].astype(float)
 	gamma_log_like = aa[1:,4].astype(float)
 
-	print('Average Tau: ' + str(np.mean(pred_tau)))
-	print('Average log like: ' + str(np.mean(gamma_log_like)))
-	print('Corr chi_sq: ' + str(np.corrcoef(obs_chi_sq, pred_chi_sq)))
+	num_bootstrap_samples = 1000
+	sum_gamma_log_like, se_sum_gamma_log_like = bootstrap_gamma_log_like(gamma_log_like, num_bootstrap_samples)
+	print(sum_gamma_log_like)
+	print(se_sum_gamma_log_like)
+	return sum_gamma_log_like, se_sum_gamma_log_like
+
+	#print('Average Tau: ' + str(np.mean(pred_tau)))
+	#print('Average log like: ' + str(np.mean(gamma_log_like)))
+	#print('Corr chi_sq: ' + str(np.corrcoef(obs_chi_sq, pred_chi_sq)))
 
 
 trait_name = sys.argv[1]
@@ -260,36 +319,52 @@ print(trait_name)
 
 testing_chromosome_type = 'chrom_2_3'
 testing_chromosome_type = 'chrom_5'
+testing_chromosome_type = 'even'
+
 testing_chromosomes = get_training_chromosomes(testing_chromosome_type)
 testing_window_data = load_in_testing_data(input_dir, trait_name, testing_chromosomes)
 
 # Model training
 training_chromosome_type = 'even'
 
-iteration_vec = ['20', '25']
-model_types = ['linear_model', 'neural_network']
-model_types = ['neural_network']
-
-
-for iter_num in iteration_vec:
-	for model_type in model_types:
-
-		print('\n')	
-		print('#######################')
-		print('#######################')
-		print(model_type + '    /   ' + str(iter_num))
 
 
 
-		temp_output_model_root = output_dir + trait_name + '_nonlinear_sldsc_multivariate_updates_results_training_data_' + model_type + '_' + training_chromosome_type + '_annotations_to_gamma_model_temp_' + iter_num
+model_vectors = [('neural_network_no_drops', '10', 'v3'), ('neural_network', '10', 'v4'), ('linear_model', '10', 'v2'), ('intercept_model', '15', 'v2')]
+model_vectors = [('neural_network_no_drops', '10', 'v3'), ('linear_model', '10', 'v2'), ('intercept_model', '15', 'v2')]
 
 
-		# Save training data results
-		# Save TensorFlow model
-		genomic_anno_to_gamma_model = tf.keras.models.load_model(temp_output_model_root,custom_objects={'gaussian_neg_log_likelihood_tf_padded_loss':gaussian_neg_log_likelihood_tf_padded_loss})
+summary_output_file = output_dir + trait_name + '_nonlinear_sldsc_multivariate_results_training_data_' + training_chromosome_type + '_' + testing_chromosome_type + '_testing_ld_score_regression_eval.txt'
+t = open(summary_output_file,'w')
+t.write('model\tsum_gamma_log_like\tse_sum_gamma_log_like\n')
 
 
-		testing_ldsc_likelihood_output_file = output_dir + trait_name + '_nonlinear_sldsc_multivariate_results_training_data_' + model_type + '_' + training_chromosome_type + '_' + testing_chromosome_type + '_testing_ld_score_regression_eval_temper_' + iter_num + '.txt'
-		run_ld_score_regression_likelihood_evaluation(testing_window_data, genomic_anno_to_gamma_model, samp_size, testing_ldsc_likelihood_output_file)
-		likelihood_summary(testing_ldsc_likelihood_output_file)
+for model_tuple in model_vectors:
+
+	model_type = model_tuple[0]
+	model_iter = model_tuple[1]
+	model_version = model_tuple[2]
+
+	print('\n')	
+	print('#######################')
+	print('#######################')
+	print(model_type + '    /   ' + str(model_iter))
+
+
+
+	temp_output_model_root = output_dir + trait_name + '_nonlinear_sldsc_univariate_' + model_version + '_updates_results_training_data_' + model_type + '_' + training_chromosome_type + '_annotations_to_gamma_model_temp_' + model_iter
+
+	# Save training data results
+	# Save TensorFlow model
+	#genomic_anno_to_gamma_model = tf.keras.models.load_model(temp_output_model_root,custom_objects={'gaussian_neg_log_likelihood_tf_padded_loss':gaussian_neg_log_likelihood_tf_padded_loss})
+
+
+	testing_ldsc_likelihood_output_file = output_dir + trait_name + '_nonlinear_sldsc_multivariate_results_training_data_' + model_type + '_' + training_chromosome_type + '_' + testing_chromosome_type + '_testing_ld_score_regression_eval_temper_' + model_iter + '.txt'
+	#run_ld_score_regression_likelihood_evaluation(testing_window_data, genomic_anno_to_gamma_model, samp_size, testing_ldsc_likelihood_output_file, model_type)
+	sum_gamma_log_like, se_sum_gamma_log_like = likelihood_summary(testing_ldsc_likelihood_output_file)
+
+	t.write(model_type + '\t' + str(sum_gamma_log_like) + '\t' + str(se_sum_gamma_log_like) + '\n')
+
+t.close()
+
 

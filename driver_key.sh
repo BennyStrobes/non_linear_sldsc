@@ -8,6 +8,8 @@
 # Directory containing summary statistics
 ukbb_sumstats_hg19_dir="/n/groups/price/UKBiobank/sumstats/bolt_337K_unrelStringentBrit_MAF0.001_v3/"
 
+non_bolt_lmm_sumstats_hg19_dir="/n/groups/price/UKBiobank/sumstats/sumstats_for_ukb_409K/"
+
 #Directory that contains necessary liftover information.
 ##Specifically, it must contain:
 #####1. 'liftOver'   --> the executable
@@ -41,6 +43,9 @@ ukbb_preprocessed_for_genome_wide_susie_dir=$old_output_root"ukbb_preprocessed_f
 # Output root
 output_root="/n/groups/price/ben/non_linear_sldsc/"
 
+# directory containing non-bolt-lmm hg38 sumstats
+non_bolt_lmm_hg38_sumstats_dir=$output_root"non_bolt_lmm_hg38_sumstats/"
+
 # Directory containing preprocessed data for non-linear sldsc analysis
 preprocessed_data_for_non_linear_sldsc_dir=$output_root"preprocessed_data_for_non_linear_sldsc/"
 
@@ -72,6 +77,14 @@ fi
 
 
 ########################################
+# # Convert Non-bolt-lmm sumstats to hg38
+########################################
+if false; then
+sh liftover_non_bolt_lmm_ukbb_summary_statistics_from_hg19_to_hg38.sh $liftover_directory $non_bolt_lmm_sumstats_hg19_dir $non_bolt_lmm_hg38_sumstats_dir
+fi
+
+
+########################################
 # # Preprocess data for non-linear S-LDSC analysis
 ########################################
 trait_name="blood_WHITE_COUNT"
@@ -82,18 +95,37 @@ fi
 ########################################
 # # Run non-linear S-LDSC analysis
 ########################################
-
+trait_name="blood_WHITE_COUNT"
+samp_size="326723"
+model_type="neural_network_no_drops"
+if false; then
+sbatch run_non_linear_sldsc.sh $trait_name $preprocessed_data_for_non_linear_sldsc_dir $non_linear_sldsc_results_dir $model_type $samp_size
+fi
+if false; then
 trait_name="blood_WHITE_COUNT"
 samp_size="326723"
 model_type="neural_network"
+sbatch run_non_linear_sldsc.sh $trait_name $preprocessed_data_for_non_linear_sldsc_dir $non_linear_sldsc_results_dir $model_type $samp_size
+fi
 if false; then
+trait_name="blood_WHITE_COUNT"
+samp_size="326723"
+model_type="linear_model"
+sbatch run_non_linear_sldsc.sh $trait_name $preprocessed_data_for_non_linear_sldsc_dir $non_linear_sldsc_results_dir $model_type $samp_size
+fi
+if false; then
+
+trait_name="blood_WHITE_COUNT"
+samp_size="326723"
+model_type="intercept_model"
 sbatch run_non_linear_sldsc.sh $trait_name $preprocessed_data_for_non_linear_sldsc_dir $non_linear_sldsc_results_dir $model_type $samp_size
 fi
 
-model_type="linear_model"
-if false; then
-sbatch run_non_linear_sldsc.sh $trait_name $preprocessed_data_for_non_linear_sldsc_dir $non_linear_sldsc_results_dir $model_type $samp_size
-fi
+
+
+
+
+
 
 
 ########################################
@@ -103,14 +135,13 @@ trait_name="blood_WHITE_COUNT"
 samp_size="326723"
 model_type="neural_network"
 if false; then
-sbatch run_non_linear_sldsc_multivariate_updates.sh $trait_name $preprocessed_data_for_non_linear_sldsc_dir $non_linear_sldsc_results_dir $model_type $samp_size
+sh run_non_linear_sldsc_multivariate_updates.sh $trait_name $preprocessed_data_for_non_linear_sldsc_dir $non_linear_sldsc_results_dir $model_type $samp_size
 fi
-
 trait_name="blood_WHITE_COUNT"
 samp_size="326723"
 model_type="linear_model"
 if false; then
-sbatch run_non_linear_sldsc_multivariate_updates.sh $trait_name $preprocessed_data_for_non_linear_sldsc_dir $non_linear_sldsc_results_dir $model_type $samp_size
+sh run_non_linear_sldsc_multivariate_updates.sh $trait_name $preprocessed_data_for_non_linear_sldsc_dir $non_linear_sldsc_results_dir $model_type $samp_size
 fi
 
 trait_name="blood_WHITE_COUNT"

@@ -18,5 +18,7 @@ for chrom_num in {1..22}; do
 done
 fi
 
-chrom_num="21"
-sh preprocess_data_for_non_linear_sldsc_per_chrom.sh $ukbb_preprocessed_for_genome_wide_susie_dir $ldsc_baseline_ld_hg38_annotation_dir $preprocessed_data_for_non_linear_sldsc_dir $chrom_num $trait_name
+
+if false; then
+python3 calculate_total_number_of_snps.py $preprocessed_data_for_non_linear_sldsc_dir $trait_name
+fi
