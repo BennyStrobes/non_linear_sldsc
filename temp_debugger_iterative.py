@@ -504,6 +504,11 @@ def get_non_neg_indices_in_standard_output_file(input_file, output_file, non_neg
 	f.close()
 	t.close()
 
+def gaussian_neg_log_likelihood_tf_padded_loss(beta_squared_true, gamma_pred):
+	epsilon = 1e-30
+	nll = tf.math.log(gamma_pred + epsilon) + tf.math.divide(beta_squared_true, (gamma_pred+epsilon))
+	return nll
+
 
 trait_name = sys.argv[1]
 input_dir = sys.argv[2]
@@ -522,44 +527,51 @@ training_chromosome_type = 'even'
 
 
 
-'''
-model_vectors = ['sldsc_linear_model_non_neg_tau', 'sldsc_linear_model', 'neural_network', 'linear_model', 'exp_linear_model', 'intercept_model']
+
+model_vectors = ['sldsc_linear_model_non_neg_tau', 'sldsc_linear_model', 'neural_network_no_drops', 'linear_model', 'neural_network', 'exp_linear_model', 'intercept_model']
 
 
-summary_output_file = output_dir + trait_name + '_nonlinear_sldsc_marginal_updates_results_training_data_1_grad_steps_True_independent_reg_snps_' + training_chromosome_type + '_' + testing_chromosome_type + '_testing_ld_score_regression_eval.txt'
+summary_output_file = output_dir + trait_name + '_nonlinear_sldsc_univariate_updates_results_training_data_' + training_chromosome_type + '_' + testing_chromosome_type + '_testing_ld_score_regression_eval.txt'
 
 t = open(summary_output_file,'w')
 t.write('model\tsum_gamma_log_like\tse_sum_gamma_log_like\n')
 
 for model_type in model_vectors:
-	for itera in [120]:
-
-		print('\n')	
-		print('#######################')
-		print('#######################')
-		print(model_type)
-		print(itera)
-
-
-		if model_type == 'sldsc_linear_model' or model_type == 'sldsc_linear_model_non_neg_tau':
-			model_root = output_dir + trait_name + '_sldsc_source_code_even_chrom_no_intercept.results'
-			data = np.loadtxt(model_root, dtype=str, delimiter='\t')
-			genomic_anno_to_gamma_model = data[1:,7].astype(float)
-		else:
-			model_root = output_dir + trait_name + '_nonlinear_sldsc_marginal_updates_results_training_data_' + model_type + '_1_grad_steps_True_independent_reg_snps_' + training_chromosome_type + '_annotations_to_gamma_model_temp_' + str(itera)
-			# Save training data results
-			# Save TensorFlow model
-			if os.path.isdir(model_root) == False:
-				print('skipped')
-				continue
-			genomic_anno_to_gamma_model = tf.keras.models.load_model(model_root,custom_objects={'ldsc_tf_loss_fxn':ldsc_tf_loss_fxn})
+	print('\n')	
+	print('#######################')
+	print('#######################')
+	if model_type == 'neural_network_no_drops':
+		itera = 6
+	elif model_type == 'neural_network':
+		itera = 4
+	elif model_type == 'linear_model':
+		itera = 7
+	elif model_type == 'intercept_model':
+		itera = 7
+	elif model_type == 'exp_linear_model':
+		itera = 5
+	print(model_type)
 
 
-		testing_ldsc_likelihood_output_file = output_dir + trait_name + '_nonlinear_sldsc_marginal_updates_results_training_data_' + model_type + '_1_grad_steps_True_independent_reg_snps_' + training_chromosome_type + '_' + testing_chromosome_type + '_testing_ld_score_regression_eval_temper.txt'
-		run_ld_score_regression_likelihood_evaluation(testing_window_data, genomic_anno_to_gamma_model, samp_size, testing_ldsc_likelihood_output_file, model_type)
-		sum_gamma_log_like, se_sum_gamma_log_like = likelihood_summary(testing_ldsc_likelihood_output_file)
+	if model_type == 'sldsc_linear_model' or model_type == 'sldsc_linear_model_non_neg_tau':
+		model_root = output_dir + trait_name + '_sldsc_source_code_even_chrom_no_intercept.results'
+		data = np.loadtxt(model_root, dtype=str, delimiter='\t')
+		genomic_anno_to_gamma_model = data[1:,7].astype(float)
+	else:
+		model_root = output_dir + trait_name + '_nonlinear_sldsc_univariate_v1_updates_results_training_data_' + model_type + '_' + training_chromosome_type + '_annotations_to_gamma_model_temp_' + str(itera)
+		# Save training data results
+		# Save TensorFlow model
+		if os.path.isdir(model_root) == False:
+			print('skipped')
+			continue
+		genomic_anno_to_gamma_model = tf.keras.models.load_model(model_root,custom_objects={'gaussian_neg_log_likelihood_tf_padded_loss':gaussian_neg_log_likelihood_tf_padded_loss})
 
-		t.write(model_type + '\t' + str(sum_gamma_log_like) + '\t' + str(se_sum_gamma_log_like) + '\n')
+
+	testing_ldsc_likelihood_output_file = output_dir + trait_name + '_nonlinear_sldsc_univariate_updates_results_training_data_' + model_type + '_' + training_chromosome_type + '_' + testing_chromosome_type + '_testing_ld_score_regression_eval_temper.txt'
+	run_ld_score_regression_likelihood_evaluation(testing_window_data, genomic_anno_to_gamma_model, samp_size, testing_ldsc_likelihood_output_file, model_type)
+	sum_gamma_log_like, se_sum_gamma_log_like = likelihood_summary(testing_ldsc_likelihood_output_file)
+
+	t.write(model_type + '\t' + str(sum_gamma_log_like) + '\t' + str(se_sum_gamma_log_like) + '\n')
 
 t.close()
 
@@ -568,7 +580,9 @@ t.close()
 
 
 # GET NON-negative indices
-summary_non_neg_output_file = output_dir + trait_name + '_nonlinear_sldsc_marginal_updates_results_training_data_1_grad_steps_True_independent_reg_snps_' + training_chromosome_type + '_' + testing_chromosome_type + '_testing_ld_score_regression_eval_non_negative.txt'
+summary_non_neg_output_file = output_dir + trait_name + '_nonlinear_sldsc_univariate_updates_results_training_data_' + training_chromosome_type + '_' + testing_chromosome_type + '_testing_ld_score_regression_eval_non_negative.txt'
+
+
 
 t2 = open(summary_non_neg_output_file,'w')
 t2.write('model\tsum_gamma_log_like\tse_sum_gamma_log_like\n')
@@ -576,61 +590,16 @@ t2.write('model\tsum_gamma_log_like\tse_sum_gamma_log_like\n')
 
 
 model_type = 'sldsc_linear_model'
-testing_ldsc_likelihood_output_file = output_dir + trait_name + '_nonlinear_sldsc_marginal_updates_results_training_data_' + model_type + '_1_grad_steps_True_independent_reg_snps_' + training_chromosome_type + '_' + testing_chromosome_type + '_testing_ld_score_regression_eval_temper.txt'
+testing_ldsc_likelihood_output_file = output_dir + trait_name + '_nonlinear_sldsc_univariate_updates_results_training_data_' + model_type + '_' + training_chromosome_type + '_' + testing_chromosome_type + '_testing_ld_score_regression_eval_temper.txt'
 non_neg_indices_dicti = get_non_negative_indices_from_sldsc_run(testing_ldsc_likelihood_output_file)
 
 for model_type in model_vectors:
-	for itera in [120]:
-		testing_ldsc_likelihood_output_file = output_dir + trait_name + '_nonlinear_sldsc_marginal_updates_results_training_data_' + model_type + '_1_grad_steps_True_independent_reg_snps_' + training_chromosome_type + '_' + testing_chromosome_type + '_testing_ld_score_regression_eval_temper.txt'
-		testing_ldsc_likelihood_non_neg_output_file = output_dir + trait_name + '_nonlinear_sldsc_marginal_updates_results_training_data_' + model_type + '_1_grad_steps_True_independent_reg_snps_' + training_chromosome_type + '_' + testing_chromosome_type + '_testing_ld_score_regression_eval_non_neg_temper.txt'
-		get_non_neg_indices_in_standard_output_file(testing_ldsc_likelihood_output_file, testing_ldsc_likelihood_non_neg_output_file, non_neg_indices_dicti)
+	testing_ldsc_likelihood_output_file = output_dir + trait_name + '_nonlinear_sldsc_univariate_updates_results_training_data_' + model_type + '_' + training_chromosome_type + '_' + testing_chromosome_type + '_testing_ld_score_regression_eval_temper.txt'
+	testing_ldsc_likelihood_non_neg_output_file = output_dir + trait_name + '_nonlinear_sldsc_univariate_updates_results_training_data_' + model_type + '_' + training_chromosome_type + '_' + testing_chromosome_type + '_testing_ld_score_regression_eval_non_neg_temper.txt'
+	get_non_neg_indices_in_standard_output_file(testing_ldsc_likelihood_output_file, testing_ldsc_likelihood_non_neg_output_file, non_neg_indices_dicti)
 
-		sum_gamma_log_like, se_sum_gamma_log_like = likelihood_summary(testing_ldsc_likelihood_non_neg_output_file)
+	sum_gamma_log_like, se_sum_gamma_log_like = likelihood_summary(testing_ldsc_likelihood_non_neg_output_file)
 
-		t2.write(model_type + '\t' + str(sum_gamma_log_like) + '\t' + str(se_sum_gamma_log_like) + '\n')
+	t2.write(model_type + '\t' + str(sum_gamma_log_like) + '\t' + str(se_sum_gamma_log_like) + '\n')
 
 t2.close()
-'''
-
-model_vectors = ['reduced_dimension_interaction_model']
-
-
-summary_output_file = output_dir + trait_name + '_nonlinear_sldsc_marginal_updates_results_training_data_1_grad_steps_False_independent_reg_snps_' + training_chromosome_type + '_' + testing_chromosome_type + '_testing_ld_score_regression_eval.txt'
-
-t = open(summary_output_file,'w')
-t.write('model\tsum_gamma_log_like\tse_sum_gamma_log_like\n')
-
-for model_type in model_vectors:
-	for itera in [35]:
-
-		print('\n')	
-		print('#######################')
-		print('#######################')
-		print(model_type)
-		print(itera)
-
-
-		if model_type == 'sldsc_linear_model' or model_type == 'sldsc_linear_model_non_neg_tau':
-			model_root = output_dir + trait_name + '_sldsc_source_code_even_chrom_no_intercept.results'
-			data = np.loadtxt(model_root, dtype=str, delimiter='\t')
-			genomic_anno_to_gamma_model = data[1:,7].astype(float)
-		else:
-			model_root = output_dir + trait_name + '_nonlinear_sldsc_marginal_updates_results_training_data_' + model_type + '_1_grad_steps_False_independent_reg_snps_' + training_chromosome_type + '_annotations_to_gamma_model_temp_' + str(itera)
-			# Save training data results
-			# Save TensorFlow model
-			if os.path.isdir(model_root) == False:
-				print('skipped')
-				continue
-			genomic_anno_to_gamma_model = tf.keras.models.load_model(model_root,custom_objects={'ldsc_tf_loss_fxn':ldsc_tf_loss_fxn})
-
-
-		testing_ldsc_likelihood_output_file = output_dir + trait_name + '_nonlinear_sldsc_marginal_updates_results_training_data_' + model_type + '_1_grad_steps_False_independent_reg_snps_' + training_chromosome_type + '_' + testing_chromosome_type + '_testing_ld_score_regression_eval_temper.txt'
-		run_ld_score_regression_likelihood_evaluation(testing_window_data, genomic_anno_to_gamma_model, samp_size, testing_ldsc_likelihood_output_file, model_type)
-		sum_gamma_log_like, se_sum_gamma_log_like = likelihood_summary(testing_ldsc_likelihood_output_file)
-
-		t.write(model_type + '\t' + str(sum_gamma_log_like) + '\t' + str(se_sum_gamma_log_like) + '\n')
-
-t.close()
-
-
-

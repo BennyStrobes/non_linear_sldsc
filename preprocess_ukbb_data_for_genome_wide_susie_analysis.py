@@ -77,7 +77,7 @@ def get_window_names_on_this_chromosome(genome_wide_window_file, chrom_num):
 	return chromosome, window_dictionary
 
 
-def fill_in_window_dictionary_for_single_trait(trait_name, trait_file, chrom_num, window_names_chromosome, gtex_variants, window_dictionary):
+def fill_in_window_dictionary_for_single_trait(trait_name, trait_file, chrom_num, window_names_chromosome, window_dictionary, ref_snp_mapping):
 	f = open(trait_file)
 	head_count = 0
 	used_variants = {}
@@ -114,42 +114,34 @@ def fill_in_window_dictionary_for_single_trait(trait_name, trait_file, chrom_num
 		# Some repeats in this file..
 		if line_variant_id in used_variants or line_variant_id_alt in used_variants:
 			continue
+
+		short_variant_id = '_'.join(line_variant_id.split('_')[:4])
+
+		if short_variant_id not in ref_snp_mapping:
+			continue
+
 		used_variants[line_variant_id] =1
 		used_variants[line_variant_id_alt] = 1
 		# Variant id in gtex variants
-		if line_variant_id in gtex_variants:
-			if line_variant_id_alt in gtex_variants:
-				print('assumption error')
-				pdb.set_trace()
-			beta = float(data[10])
-			std_err = float(data[11])
-			stringer = trait_name + ',' + line_variant_id + ',' + str(beta) + ',' + str(std_err)
-			window_string = window_names_chromosome[variant_pos]
-			windows = window_string.split(',')
-			for window in windows:
-				if window == 'NULL':  # This is necessary because I threw out some long range LD windows
-					continue
-				window_dictionary[window].append(stringer)
-		# Flipped variant id in gtex variants (need to negate beta)
-		elif line_variant_id_alt in gtex_variants:
-			beta = -float(data[10])
-			std_err = float(data[11])
-			stringer = trait_name + ',' + line_variant_id_alt + ',' + str(beta) + ',' + str(std_err)
-			window_string = window_names_chromosome[variant_pos]
-			windows = window_string.split(',')
-			for window in windows:
-				if window == 'NULL':  # This is necessary because I threw out some long range LD windows
-					continue
-				window_dictionary[window].append(stringer)
+	
+		beta = float(data[10])
+		std_err = float(data[11])
+		stringer = trait_name + ',' + line_variant_id + ',' + str(beta) + ',' + str(std_err)
+		window_string = window_names_chromosome[variant_pos]
+		windows = window_string.split(',')
+		for window in windows:
+			if window == 'NULL':  # This is necessary because I threw out some long range LD windows
+				continue
+			window_dictionary[window].append(stringer)
 	f.close()
 	return window_dictionary
 
-def fill_in_window_dictionary(trait_names, trait_files, chrom_num, window_names_chromosome, gtex_variants, window_dictionary):
+def fill_in_window_dictionary(trait_names, trait_files, chrom_num, window_names_chromosome, window_dictionary, ref_snp_mapping):
 	for trait_index, trait_name in enumerate(trait_names):
 		print(trait_name)
 		trait_file = trait_files[trait_index]
 		# need to first line valid variants
-		window_dictionary = fill_in_window_dictionary_for_single_trait(trait_name, trait_file, chrom_num, window_names_chromosome, gtex_variants, window_dictionary)
+		window_dictionary = fill_in_window_dictionary_for_single_trait(trait_name, trait_file, chrom_num, window_names_chromosome, window_dictionary, ref_snp_mapping)
 	return window_dictionary
 
 def organize_window_test_arr(gene_test_arr):
@@ -226,11 +218,9 @@ def organize_window_test_arr(gene_test_arr):
 chrom_num = sys.argv[1]
 genome_wide_window_file = sys.argv[2]
 ukbb_sumstats_hg38_dir = sys.argv[3]
-gtex_genotype_dir = sys.argv[4]
-ref_1kg_genotype_dir = sys.argv[5]
-ukbb_preprocessed_for_genome_wide_susie_dir = sys.argv[6]
+ref_1kg_genotype_dir = sys.argv[4]
+ukbb_preprocessed_for_genome_wide_susie_dir = sys.argv[5]
 ##########################
-
 
 
 # Extract names of UKBB studies for this analysis
@@ -246,18 +236,10 @@ for trait_index, trait_name in enumerate(trait_names):
 	trait_name_to_sample_size[trait_name] = trait_sample_size
 
 
-# First extract list of gtex variants in UKBB [we will be using gtex variant orientation]
-# Also note that these gtex variants are also found in UKBB
-gtex_variants = get_gtex_variants_on_this_chromosome(gtex_genotype_dir + 'Whole_Blood_GTEx_v8_genotype_EUR_' + chrom_num + '.bim')  #note: whole blood is randomly choosen but really doesn't matter b/c all tissues have the same variants
 
 
 # Get names of windows on this chromosome (in data structure where of array of length chromosome)
 window_names_chromosome, window_dictionary = get_window_names_on_this_chromosome(genome_wide_window_file, chrom_num)
-
-
-
-# Fill in the dictionary with each elent in list is a string corresponding to info on a cis snp
-window_dictionary = fill_in_window_dictionary(trait_names, trait_files, chrom_num, window_names_chromosome, gtex_variants, window_dictionary)
 
 
 
@@ -296,6 +278,13 @@ for itera in range(len(reference_snp_names)):
 	ref_snp_mapping[ref_alt_snp_name] = (itera, -1.0)
 
 
+
+# Fill in the dictionary with each elent in list is a string corresponding to info on a cis snp
+window_dictionary = fill_in_window_dictionary(trait_names, trait_files, chrom_num, window_names_chromosome, window_dictionary, ref_snp_mapping)
+
+
+
+
 output_file = ukbb_preprocessed_for_genome_wide_susie_dir + 'genome_wide_susie_windows_and_processed_data_chrom_' + chrom_num + '.txt'
 t = open(output_file,'w')
 f = open(genome_wide_window_file)
@@ -325,6 +314,7 @@ for line in f:
 
 	# Throw out windows with fewer than 50 variants
 	if len(window_variant_arr) < 50:
+		print('throw')
 		continue
 
 	# Get sample sizes

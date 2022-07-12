@@ -8,10 +8,9 @@
 source ~/.bash_profile
 
 ukbb_sumstats_hg38_dir="$1"
-gtex_genotype_dir="$2"
-ref_1kg_genotype_dir="$3"
-ukbb_preprocessed_for_genome_wide_susie_dir="$4"
-ukbb_sumstats_hg19_dir="$5"
+ref_1kg_genotype_dir="$2"
+ukbb_preprocessed_for_genome_wide_susie_dir="$3"
+ukbb_sumstats_hg19_dir="$4"
 
 
 
@@ -36,7 +35,7 @@ fi
 ##################################################
 if false; then
 for chrom_num in $(seq 1 22); do 
-	sbatch preprocess_ukbb_data_for_genome_wide_susie_analysis.sh $chrom_num $genome_wide_window_file $ukbb_sumstats_hg38_dir $gtex_genotype_dir $ref_1kg_genotype_dir $ukbb_preprocessed_for_genome_wide_susie_dir
+	sbatch preprocess_ukbb_data_for_genome_wide_susie_analysis.sh $chrom_num $genome_wide_window_file $ukbb_sumstats_hg38_dir $ref_1kg_genotype_dir $ukbb_preprocessed_for_genome_wide_susie_dir
 done
 fi
 
