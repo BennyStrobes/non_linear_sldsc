@@ -25,9 +25,41 @@ def extract_sample_size_and_h2_from_log_file(bolt_lmm_log_file):
 	return int(samp_size), h2
 
 
-output_dir = sys.argv[1]
-input_dir = sys.argv[2]
+sumstats_dir = sys.argv[1]
+sumstat_summary_file = sys.argv[2]
 
+# get study names
+study_names = []
+for file_name in os.listdir(sumstats_dir):
+	if file_name.endswith('.bgen.stats.gz') == False:
+		continue
+	study_name = file_name.split('.bgen.stats.gz')[0].split('v3.')[1]
+	if study_name == '460K.CAD':
+		continue
+	if study_name.endswith('interim'):
+		continue
+	study_names.append(study_name)
+study_names = np.unique(study_names)
+
+t = open(sumstat_summary_file,'w')
+
+for trait_name in study_names:
+	# Log file for this trait from bolt-lmm
+	trait_file = sumstats_dir + 'bolt_337K_unrelStringentBrit_MAF0.001_v3.' + trait_name + '.bgen.stats.gz'
+	# Extact sample size and h2 from log file
+	bolt_lmm_log_file = sumstats_dir + 'bolt_337K_unrelStringentBrit_MAF0.001_v3.' + trait_name + '.sbatch.log'
+
+	# Extact sample size and h2 from log file
+	sample_size, h2 = extract_sample_size_and_h2_from_log_file(bolt_lmm_log_file)
+	
+	# Min heritability threshold
+	if h2 > .1:
+		# print to output
+		t.write(trait_name + '\t' + trait_file + '\t' + str(sample_size) + '\t' + str(h2) + '\n')
+
+t.close()
+
+'''
 input_trait_file = output_dir + 'ukbb_hg38_sumstat_files.txt'
 
 output_trait_file = output_dir + 'ukbb_hg38_sumstat_files_with_samp_size_and_h2.txt'
@@ -62,3 +94,4 @@ for line in f:
 
 f.close()
 t.close()
+'''

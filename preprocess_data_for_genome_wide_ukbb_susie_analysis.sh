@@ -7,11 +7,12 @@
 
 source ~/.bash_profile
 
-ukbb_sumstats_hg38_dir="$1"
+ukbb_sumstats_hg19_dir="$1"
 ref_1kg_genotype_dir="$2"
-ukbb_preprocessed_for_genome_wide_susie_dir="$3"
-ukbb_sumstats_hg19_dir="$4"
-
+ukbb_in_sample_ld_dir="$3"
+ukbb_preprocessed_for_genome_wide_susie_dir="$4"
+ldsc_baseline_ld_hg19_annotation_dir="$5"
+ukbb_in_sample_genotype_dir="$6"
 
 
 ##################################################
@@ -20,14 +21,15 @@ ukbb_sumstats_hg19_dir="$4"
 ##################################################
 genome_wide_window_file=$ukbb_preprocessed_for_genome_wide_susie_dir"genome_wide_susie_windows.txt"
 if false; then
-python3 generate_genome_wide_susie_windows.py $ukbb_sumstats_hg38_dir $genome_wide_window_file
+python3 generate_genome_wide_susie_windows.py $ukbb_sumstats_hg19_dir $genome_wide_window_file
 fi
 
 ##################################################
 # Generate trait file
 ##################################################
+sumstat_summary_file=$ukbb_preprocessed_for_genome_wide_susie_dir"sumstat_files_summary.txt"
 if false; then
-python3 generate_trait_list_file_with_sample_size_and_heritabilities.py $ukbb_sumstats_hg38_dir $ukbb_sumstats_hg19_dir
+python3 generate_trait_list_file_with_sample_size_and_heritabilities.py $ukbb_sumstats_hg19_dir $sumstat_summary_file
 fi
 
 ##################################################
@@ -35,9 +37,10 @@ fi
 ##################################################
 if false; then
 for chrom_num in $(seq 1 22); do 
-	sbatch preprocess_ukbb_data_for_genome_wide_susie_analysis.sh $chrom_num $genome_wide_window_file $ukbb_sumstats_hg38_dir $ref_1kg_genotype_dir $ukbb_preprocessed_for_genome_wide_susie_dir
+	sbatch preprocess_ukbb_data_for_genome_wide_susie_analysis.sh $chrom_num $genome_wide_window_file $ukbb_sumstats_hg19_dir $ref_1kg_genotype_dir $ukbb_in_sample_ld_dir $ukbb_preprocessed_for_genome_wide_susie_dir $ldsc_baseline_ld_hg19_annotation_dir $ukbb_in_sample_genotype_dir
 done
 fi
+
 
 if false; then
 python3 merge_susie_input_window_file_across_chromosomes.py $ukbb_preprocessed_for_genome_wide_susie_dir

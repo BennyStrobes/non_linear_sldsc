@@ -204,7 +204,6 @@ def extract_dictionary_list_of_all_regression_snps(input_window_file, hm3_snps):
 		middle_end = window_end - 1000000
 		variant_file = data[7]
 
-		
 		beta_file = data[5]
 		beta_std_err_file = data[6]
 		all_betas = np.loadtxt(beta_file)
@@ -239,7 +238,6 @@ ldsc_baseline_ld_hg19_annotation_dir = sys.argv[2]  # Input dir (genomic annotat
 output_dir = sys.argv[3]
 chrom_num = sys.argv[4]
 trait_name = sys.argv[5]
-r_squared_correction = sys.argv[6]
 
 # First, load in hm3 snps
 hm3_snp_file = ldsc_baseline_ld_hg19_annotation_dir + 'baselineLD.' + chrom_num + '.l2.ldscore.gz'
@@ -251,14 +249,14 @@ annotation_names, variant_to_genomic_annotations = create_variant_to_genomic_ann
 
 
 # Input file
-input_window_file = ukbb_preprocessed_for_genome_wide_susie_dir + 'genome_wide_susie_windows_and_processed_data_big_windows_chrom_' + chrom_num + '.txt'
+input_window_file = ukbb_preprocessed_for_genome_wide_susie_dir + 'genome_wide_susie_windows_and_processed_data_in_sample_ld_chrom_' + chrom_num + '.txt'
 # Extract dictionary list of all regression snps. Ie:
 ### snps that are found in the middle of a window AND are hm3 snps
 regression_snps = extract_dictionary_list_of_all_regression_snps(input_window_file, hm3_snps)
 
 
 # Open file handle for output file
-output_window_file = output_dir + 'genome_wide_susie_windows_and_non_linear_sldsc_processed_data_1kg_ld_correction_' + r_squared_correction + '_chrom_' + chrom_num + '.txt'
+output_window_file = output_dir + 'genome_wide_susie_windows_and_non_linear_sldsc_processed_data_in_sample_ld_chrom_' + chrom_num + '.txt'
 t = open(output_window_file,'w')
 t.write('window_name\tvariant_id\tbeta\tbeta_se\tgenomic_annotation\tmiddle_variant_indices\tregression_variant_indices\tmiddle_regression_variant_indices\tsquared_ld\tregression_snp_squared_ld\n')
 
@@ -285,7 +283,7 @@ for line in f:
 	beta_std_err_file = data[6]
 	variant_file = data[7]
 	study_file = data[8]
-	ref_genotype_file = data[9]
+	ref_ld_file = data[9]
 	sample_size_file = data[10]
 
 	##############################
@@ -303,13 +301,8 @@ for line in f:
 	all_sample_sizes = np.loadtxt(sample_size_file)
 
 	# Load in LD matrix
-	geno = np.loadtxt(ref_genotype_file)
-	geno = geno[:, variant_indices]
-	ld = np.corrcoef(np.transpose(geno))
-	ld_sq = np.square(ld)
-	if r_squared_correction == "True":
-		ld_sq = ld_sq - ((1.0-ld_sq)/(489.0-2.0))
-		ld_sq[ld_sq < 0.0] = 0.0
+	ref_ld = np.load(ref_ld_file)
+	ld_sq = np.square(ref_ld)
 
 	# Load in gwas summary statistics
 	# betas
@@ -324,7 +317,6 @@ for line in f:
 	z = all_betas/all_beta_std_err
 	if np.sum(np.isnan(z)) > 0:
 		continue
-
 
 	# Genomic annotations
 	genomic_anno_mat = []
@@ -351,7 +343,7 @@ for line in f:
 	##############################
 	# Save data
 	##############################
-	window_output_root = output_dir + window_name + '_1kg_ld_correction_' + r_squared_correction + '_'
+	window_output_root = output_dir + window_name + '_in_sample_ld_'
 
 	# Variant Ids
 	variant_id_output_file = window_output_root + 'variant_ids.npy'
@@ -392,6 +384,7 @@ for line in f:
 	# regression snp LD matrix
 	regression_snp_squared_ld_matrix_output_file = window_output_root + 'regression_snp_squared_ld.npy'
 	np.save(regression_snp_squared_ld_matrix_output_file, subset_ld_sq.astype('float32'))
+
 
 	# Print file names to global output file
 	t.write(window_name + '\t' + variant_id_output_file + '\t' + beta_output_stem + '\t' + beta_se_output_stem + '\t' + genomic_anno_output_file + '\t' + middle_window_output_file  + '\t' + regression_indices_window_output_file + '\t' + middle_regression_indices_window_output_file + '\t' + squared_ld_matrix_output_file + '\t' + regression_snp_squared_ld_matrix_output_file + '\n')

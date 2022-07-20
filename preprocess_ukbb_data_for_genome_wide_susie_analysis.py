@@ -5,6 +5,7 @@ import pdb
 import numpy as np
 from pandas_plink import read_plink1_bin
 import pickle
+import gzip
 
 
 def extract_ukbb_trait_names_and_file(ukbb_trait_file):
@@ -23,6 +24,7 @@ def extract_ukbb_trait_names_and_file(ukbb_trait_file):
 		trait_names.append(data[0])
 		trait_files.append(data[1])
 		trait_sample_sizes.append(data[2])
+		counter = counter + 1
 	f.close()
 	return np.asarray(trait_names), np.asarray(trait_files), np.asarray(trait_sample_sizes)
 
@@ -78,12 +80,12 @@ def get_window_names_on_this_chromosome(genome_wide_window_file, chrom_num):
 
 
 def fill_in_window_dictionary_for_single_trait(trait_name, trait_file, chrom_num, window_names_chromosome, window_dictionary, ref_snp_mapping):
-	f = open(trait_file)
+	f = gzip.open(trait_file)
 	head_count = 0
 	used_variants = {}
 	afs = []
 	for line in f:
-		line = line.rstrip()
+		line = line.decode('utf-8').rstrip()
 		data = line.split('\t')
 		if head_count == 0:
 			head_count = head_count + 1
@@ -100,7 +102,9 @@ def fill_in_window_dictionary_for_single_trait(trait_name, trait_file, chrom_num
 		line_variant_id = 'chr' + data[1] + '_' + data[2] + '_' + data[4] + '_' + data[5] + '_b38'
 		line_variant_id_alt = 'chr' + data[1] + '_' + data[2] + '_' + data[5] + '_' + data[4] + '_b38'
 		variant_pos = int(data[2])
+		rsid = data[0]
 
+		'''
 		# Ignore strand ambiguous variants from analysis
 		if data[4] == 'A' and data[5] == 'T':
 			continue
@@ -110,9 +114,13 @@ def fill_in_window_dictionary_for_single_trait(trait_name, trait_file, chrom_num
 			continue
 		if data[4] == 'G' and data[5] == 'C':
 			continue
+		'''
+
 
 		# Some repeats in this file..
 		if line_variant_id in used_variants or line_variant_id_alt in used_variants:
+			print('variant repeat in gwas file!')
+			pdb.set_trace()
 			continue
 
 		short_variant_id = '_'.join(line_variant_id.split('_')[:4])
@@ -211,22 +219,47 @@ def organize_window_test_arr(gene_test_arr):
 
 	return beta_mat, std_err_mat, new_variant_vec, tissue_vec
 
+def debugger(window_start, window_end, snp_rs_ids, snp_cm, ref_pos, G):
+	indices = []
+	for ii, snp_pos in enumerate(ref_pos):
+		if snp_pos >= window_start and snp_pos <= window_end:
+			indices.append(ii)
+	indices = np.asarray(indices)
+
+	f_rs = snp_rs_ids[indices]
+	f_cm = snp_cm[indices]
+	f_G = G[:, indices]
+
+	snp_index = np.where(f_rs == 'rs1882871')[0]
+
+	ld = np.corrcoef(np.transpose(f_G))
+	ld_sq = np.square(ld)
+	ld_sq_adj = ld_sq - ((1.0-ld_sq)/(489.0-2))
+
+	cm_indices = (f_cm <= (f_cm[snp_index] + 1.0)) & (f_cm >= (f_cm[snp_index] - 1.0))
+
+	pdb.set_trace()
 
 
 #######################
 # Command line args
 chrom_num = sys.argv[1]
 genome_wide_window_file = sys.argv[2]
-ukbb_sumstats_hg38_dir = sys.argv[3]
+ukbb_sumstats_hg19_dir = sys.argv[3]
 ref_1kg_genotype_dir = sys.argv[4]
-ukbb_preprocessed_for_genome_wide_susie_dir = sys.argv[5]
+ukbb_in_sample_ld_dir = sys.argv[5]
+ukbb_preprocessed_for_genome_wide_susie_dir = sys.argv[6]
+ldsc_baseline_ld_hg19_annotation_dir = sys.argv[7]
 ##########################
 
 
+
 # Extract names of UKBB studies for this analysis
-ukbb_trait_file = ukbb_sumstats_hg38_dir + 'ukbb_hg38_sumstat_files_with_samp_size_and_h2.txt'
+ukbb_trait_file = ukbb_preprocessed_for_genome_wide_susie_dir + 'sumstat_files_summary.txt'
 trait_names, trait_files, trait_sample_sizes = extract_ukbb_trait_names_and_file(ukbb_trait_file)
 num_traits = len(trait_files)
+print(num_traits)
+
 
 
 # create mapping from trait name to sample size
@@ -237,14 +270,14 @@ for trait_index, trait_name in enumerate(trait_names):
 
 
 
-
 # Get names of windows on this chromosome (in data structure where of array of length chromosome)
 window_names_chromosome, window_dictionary = get_window_names_on_this_chromosome(genome_wide_window_file, chrom_num)
 
 
 
 # Load in Reference Genotype data
-geno_stem = ref_1kg_genotype_dir + '1000G.EUR.hg38.' + str(chrom_num) + '.'
+geno_stem = ref_1kg_genotype_dir + '1000G.EUR.QC.' + str(chrom_num) + '.'
+
 G_obj = read_plink1_bin(geno_stem + 'bed', geno_stem + 'bim', geno_stem + 'fam', verbose=False)
 G = G_obj.values # Numpy 2d array of dimension num samples X num snps
 ref_chrom = np.asarray(G_obj.chrom)
@@ -253,6 +286,8 @@ ref_pos = np.asarray(G_obj.pos)
 # For case of plink package, a0 is the first column in the plink bim file
 ref_a0 = np.asarray(G_obj.a0)
 ref_a1 = np.asarray(G_obj.a1)
+snp_cm = np.asarray(G_obj.cm)
+snp_rs_ids = np.asarray(G_obj.snp)
 # Extract reference snps names
 reference_snp_names = []
 reference_alt_snp_names = []
@@ -270,15 +305,18 @@ for itera in range(len(reference_snp_names)):
 	ref_alt_snp_name = reference_alt_snp_names[itera]
 
 	if ref_snp_name in ref_snp_mapping:
-		print('extra')
+		print('variant repeat in 1kg geno')
+		pdb.set_trace()
 	if ref_alt_snp_name in ref_snp_mapping:
-		print('extra')
+		print('variant repeat in 1kg geno')
+		pdb.set_trace()
 
 	ref_snp_mapping[ref_snp_name] = (itera, 1.0)
 	ref_snp_mapping[ref_alt_snp_name] = (itera, -1.0)
 
 
 
+# NOTE: THERE ARE SOME SNPS IN 1KG THAT ARE NOT FOUND IN GWAS. These are currently filtered out
 # Fill in the dictionary with each elent in list is a string corresponding to info on a cis snp
 window_dictionary = fill_in_window_dictionary(trait_names, trait_files, chrom_num, window_names_chromosome, window_dictionary, ref_snp_mapping)
 
@@ -297,7 +335,7 @@ for line in f:
 	data = line.split('\t')
 	if head_count == 0:
 		head_count = head_count + 1
-		t.write(line + '\tbeta_file\tstd_err_file\tvariant_file\ttissue_file\tref_genotype_file\tsample_size_file\n')
+		t.write(line + '\tbeta_file\tstd_err_file\tvariant_file\ttissue_file\tref_genotype_file\tsample_size_file\tcm_file\trsid_file\n')
 		continue
 	line_chrom_num = data[0]
 	# Limit to windows on this chromosome
@@ -312,8 +350,8 @@ for line in f:
 	# Convert from window_test_arr to beta-matrix, standard-errr matrix, and ordered-variant list
 	window_beta_mat, window_std_err_mat, window_variant_arr, window_study_arr = organize_window_test_arr(window_test_arr)
 
-	# Throw out windows with fewer than 50 variants
-	if len(window_variant_arr) < 50:
+	# Throw out windows with fewer than 3 variants
+	if len(window_variant_arr) < 3:
 		print('throw')
 		continue
 
@@ -336,6 +374,8 @@ for line in f:
 	
 	# Get reference genotype for this gene
 	gene_reference_genotype = G[:, reference_indices]
+	window_cm = snp_cm[reference_indices]
+	window_rs_ids = snp_rs_ids[reference_indices]
 
 	# Correct for flips in GTEx data (assuming 1KG is reference)
 	for snp_index, flip_value in enumerate(flip_values):
@@ -350,7 +390,6 @@ for line in f:
 	if len(window_variant_arr) != len(np.unique(window_variant_arr)):
 		print('assumptione roror')
 		pdb.set_trace()
-
 
 	# Save data to output file
 	# Beta file
@@ -371,7 +410,13 @@ for line in f:
 	# Sample sizes
 	sample_size_file = ukbb_preprocessed_for_genome_wide_susie_dir + window_name + '_study_sample_sizes.txt'
 	np.savetxt(sample_size_file, window_sample_sizes, fmt="%s", delimiter='\t')
+	# CM file
+	cm_file = ukbb_preprocessed_for_genome_wide_susie_dir + window_name + '_variant_cm.txt'
+	np.savetxt(cm_file, window_cm, fmt="%s", delimiter='\t')
+	# rsid file
+	rsid_file = ukbb_preprocessed_for_genome_wide_susie_dir + window_name + '_variant_rsid.txt'
+	np.savetxt(rsid_file, window_rs_ids, fmt="%s", delimiter='\t')
 
-	t.write(line + '\t' + beta_file + '\t' + stderr_file + '\t' + variant_file + '\t' + study_file + '\t' + ref_geno_file + '\t' + sample_size_file + '\n')
+	t.write(line + '\t' + beta_file + '\t' + stderr_file + '\t' + variant_file + '\t' + study_file + '\t' + ref_geno_file + '\t' + sample_size_file + '\t' + cm_file + '\t' + rsid_file + '\n')
 
 f.close()

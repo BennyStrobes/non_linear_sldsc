@@ -576,6 +576,51 @@ def calculate_loss_on_evaluation_data(evaluation_window_data, genomic_anno_to_ga
 
 	return epoch_eval_loss, genomic_anno_to_gamma_model, log_intercept_variable
 
+def get_new_window_middle_indices_that_are_independent(squared_ld, window_middle_indices, regression_indices, variant_ids, used_snps, thresh=.001):
+	# middle-Regression_snps X regression snps 
+	squared_ld2 = squared_ld[:, regression_indices]
+	squared_ld3 = squared_ld[:, window_middle_indices]
+	
+	regression_variant_ids = variant_ids[regression_indices]
+	window_middle_variant_ids = variant_ids[window_middle_indices]
+	num_snps = len(window_middle_indices)
+	all_snps = np.arange(num_snps)
+
+	valid_snps = np.asarray([True]*num_snps)
+	randomly_selected_independent_snps = []
+	keep_going = True
+
+
+	for ii, regression_variant_id in enumerate(regression_variant_ids):
+		if regression_variant_id in used_snps:
+			new_valid_snps = squared_ld2[:, ii] <= thresh
+			valid_snps = valid_snps*new_valid_snps
+
+	if np.sum(valid_snps) == 0:
+		keep_going = False
+	else:
+		keep_going = True
+
+	while keep_going:
+
+		snp_name = np.random.choice(all_snps[valid_snps])
+		randomly_selected_independent_snps.append(snp_name)
+
+		new_valid_snps = squared_ld3[snp_name,:] <= thresh
+		valid_snps = valid_snps*new_valid_snps
+
+		used_snps[window_middle_variant_ids[snp_name]] = 1
+
+		if np.sum(valid_snps) == 0:
+			keep_going = False
+
+	randomly_selected_independent_snps = np.asarray(randomly_selected_independent_snps)
+	if len(randomly_selected_independent_snps) == 0:
+		temper = []
+		return temper, randomly_selected_independent_snps, used_snps, False
+
+	new_window_middle_indices = window_middle_indices[randomly_selected_independent_snps]
+	return new_window_middle_indices, randomly_selected_independent_snps, used_snps, True
 
 def marginal_non_linear_sldsc(window_data, evaluation_window_data, samp_size, model_type, learn_intercept, temp_output_model_root, max_epochs=5):
 	# Number of annotations
@@ -613,10 +658,14 @@ def marginal_non_linear_sldsc(window_data, evaluation_window_data, samp_size, mo
 		print('###################################')
 		print('epoch iter ' + str(epoch_iter))
 		print('###################################')
+		used_snps = {}
 		start_time = time.time()
 		for window_counter, window_iter in enumerate(np.random.permutation(range(num_windows))):
 			# Load in data for this window
 			window_name = window_data.iloc[window_iter]['window_name']
+
+			# Load in variant ids
+			variant_ids = np.load(window_data.iloc[window_iter]['variant_id_file'])
 
 			# Extract chi-squared statistics
 			window_beta = np.load(window_data.iloc[window_iter]['beta_file'])
@@ -629,15 +678,26 @@ def marginal_non_linear_sldsc(window_data, evaluation_window_data, samp_size, mo
 			# Extract genomic annotation file
 			window_genomic_anno = np.load(window_data.iloc[window_iter]['genomic_annotation_file'])
 			squared_ld = np.load(window_data.iloc[window_iter]['regression_snps_squared_ld_file'])
+			#squared_ld_old = np.load(window_data.iloc[window_iter]['squared_ld_file'])
+
+			# Filter to independent middle regression snps
+			new_window_middle_indices, middle_indices_filter, used_snps, pass_snp_filter_bool = get_new_window_middle_indices_that_are_independent(squared_ld, window_middle_indices,regression_indices, variant_ids, used_snps)
+			if pass_snp_filter_bool == False:
+				continue
+
+			if len(middle_indices_filter) == 0:
+				print('assumption error')
+				pdb.set_trace()
+			squared_ld = squared_ld[middle_indices_filter, :]
 
 			# Weight middle-regression snps by all regression snps
 			snp_weights = np.sum(squared_ld[:, regression_indices], axis=1)
 			snp_weights[snp_weights < 1.0]=1.0
-
+			snp_weights = snp_weights*0.0 + 1.0
 
 			# Convert to tensors
 			snp_weights = snp_weights.reshape(len(snp_weights),1)
-			window_chi_sq = window_chi_sq[window_middle_indices]
+			window_chi_sq = window_chi_sq[new_window_middle_indices]
 			window_chi_sq = tf.convert_to_tensor(window_chi_sq.reshape(len(window_chi_sq),1), dtype=tf.float32)
 			squared_ld = tf.convert_to_tensor(squared_ld, dtype=tf.float32)
 
@@ -650,7 +710,7 @@ def marginal_non_linear_sldsc(window_data, evaluation_window_data, samp_size, mo
 			with tf.GradientTape() as tape:
 				window_pred_tau = genomic_anno_to_gamma_model(window_genomic_anno, training=True)
 				loss_value, log_likelihoods = ldsc_tf_loss_fxn(window_chi_sq, window_pred_tau, samp_size, squared_ld, snp_weights, log_intercept_variable)
-			
+
 			# Define trainable variables
 			trainable_variables = genomic_anno_to_gamma_model.trainable_weights
 			if learn_intercept == 'learn_intercept':
@@ -795,7 +855,7 @@ window_data = load_in_data(input_dir, trait_name, ld_type, training_chromosomes)
 evaluation_window_data = load_in_data(input_dir, trait_name, ld_type, evaluation_chromosomes)
 
 # Output root stem
-model_output_root = output_dir + trait_name + '_nonlinear_sldsc_marginal_updates_gamma_likelihood_results_training_data_' + model_type + '_' + learn_intercept + '_' + ld_type + '_' + training_chromosome_type + '_train_' + evaluation_chromosome_type + '_eval' + '_annotations_to_gamma_model'
+model_output_root = output_dir + trait_name + '_nonlinear_sldsc_marginal_updates_gamma_likelihood_ind_snps_results_training_data_' + model_type + '_' + learn_intercept + '_' + ld_type + '_' + training_chromosome_type + '_train_' + evaluation_chromosome_type + '_eval' + '_annotations_to_gamma_model'
 
 # Model training
 genomic_anno_to_gamma_model = marginal_non_linear_sldsc(window_data, evaluation_window_data, samp_size, model_type, learn_intercept, model_output_root, max_epochs=max_epochs)

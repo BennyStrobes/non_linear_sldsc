@@ -2,7 +2,7 @@ import numpy as np
 import os
 import sys
 import pdb
-
+import gzip
 
 
 def create_mapping_from_chrom_num_to_min_max_variant_position(sumstats_file):
@@ -12,19 +12,16 @@ def create_mapping_from_chrom_num_to_min_max_variant_position(sumstats_file):
 		chrom_string = str(chrom_num)
 		dicti[chrom_string] = (1000000000000, -10)
 
-	f = open(sumstats_file)
+	f = gzip.open(sumstats_file)
 	head_count = 0
 	for line in f:
-		line = line.rstrip()
+		line = line.decode('utf-8').rstrip()
 		data = line.split('\t')
 		if head_count == 0:
 			head_count = head_count + 1
 			continue
 		chrom_string = data[1]
 		pos = float(data[2])
-		af = float(data[6])
-		if af < .01 or af > .99:
-			continue
 		if chrom_string not in dicti:
 			continue
 		old_tuple = dicti[chrom_string]
@@ -41,12 +38,18 @@ def window_does_not_overlap_long_ld_region(long_ld_regions, chrom_string, window
 		long_ld_region_end = int(long_ld_region_info[2])
 		if 'chr' + chrom_string != long_ld_region_chrom:
 			continue
+
 		# window start in the long ld region
-		if window_start >= long_ld_region_start and window_end <= long_ld_region_end:
+		if window_start >= long_ld_region_start and window_start <= long_ld_region_end:
 			boolean = False
 		# window end in the long ld region
 		if window_end >= long_ld_region_start and window_end <= long_ld_region_end:
 			boolean = False
+		if long_ld_region_start >= window_start and long_ld_region_start <= window_end:
+			boolean = False
+		if long_ld_region_end >= window_start and long_ld_region_end <= window_end:
+			boolean = False
+
 	return boolean
 
 sumstats_dir = sys.argv[1]
@@ -54,11 +57,13 @@ output_file = sys.argv[2]
 
 # Regions identified in methods of Weissbrod et al 2020 Nature Genet (hg19) and lifted over to hg38
 # We will throw out windows in these regions
-long_ld_regions = ['chr6_25499772_33532223', 'chr8_8142478_12142491', 'chr11_45978449_57232526']
+long_ld_regions = ['chr6_25499772_33532223', 'chr8_8142478_12142491', 'chr11_45978449_57232526']  # hg38
+long_ld_regions = ['chr6_25500000_33500000', 'chr8_8000000_12000000', 'chr11_46000000_57000000']  # hg19
+
 
 # we are simply using this file to assess which snps are in it
 # as all traits in this dir have the same snps, it doesn't matter which trait we use
-sumstats_file = sumstats_dir + 'biochemistry_Cholesterol_hg38_liftover.bgen.stats'
+sumstats_file = sumstats_dir + 'bolt_337K_unrelStringentBrit_MAF0.001_v3.biochemistry_Cholesterol.bgen.stats.gz'
 
 # Create mapping from chrom num to min and max variant position
 chrom_to_min_max_variant_pos = create_mapping_from_chrom_num_to_min_max_variant_position(sumstats_file)
