@@ -80,10 +80,150 @@ if false; then
 sh preprocess_data_for_non_linear_sldsc.sh $ukbb_preprocessed_for_genome_wide_susie_dir $ldsc_baseline_ld_hg19_annotation_dir $preprocessed_data_for_non_linear_sldsc_dir $trait_name
 fi
 
-
 ########################################
 # Run non-linear S-LDSC analysis 
 ########################################
+trait_name="blood_WHITE_COUNT"
+samp_size="326723"
+model_type="neural_network_layer_norm_experiment"
+training_chromosomes="all"
+evaluation_chromosomes="chr_14"
+ld_type="in_sample_ld" # or 1kg_ld_correction_True, or 1kg_ld_correction_False
+learn_intercept="fixed_intercept" # Or "fixed_intercept"
+learning_rate="0.0001"
+if false; then
+sbatch run_non_linear_sldsc_marginal_updates.sh $trait_name $preprocessed_data_for_non_linear_sldsc_dir $non_linear_sldsc_results_dir $model_type $samp_size $training_chromosomes $evaluation_chromosomes $ld_type $learn_intercept $learning_rate
+
+
+learn_intercept="learn_intercept" # Or "fixed_intercept"
+model_type="neural_network_no_drops_scale"
+sbatch run_non_linear_sldsc_marginal_updates.sh $trait_name $preprocessed_data_for_non_linear_sldsc_dir $non_linear_sldsc_results_dir $model_type $samp_size $training_chromosomes $evaluation_chromosomes $ld_type $learn_intercept $learning_rate
+
+
+learn_intercept="learn_intercept" # Or "fixed_intercept"
+model_type="neural_network_layer_norm"
+sbatch run_non_linear_sldsc_marginal_updates.sh $trait_name $preprocessed_data_for_non_linear_sldsc_dir $non_linear_sldsc_results_dir $model_type $samp_size $training_chromosomes $evaluation_chromosomes $ld_type $learn_intercept $learning_rate
+fi
+
+if false; then
+trait_name="blood_WHITE_COUNT"
+samp_size="326723"
+model_type="neural_network_layer_norm_experiment"
+training_chromosomes="all"
+evaluation_chromosomes="chr_14"
+ld_type="in_sample_ld" # or 1kg_ld_correction_True, or 1kg_ld_correction_False
+learn_intercept="fixed_intercept" # Or "fixed_intercept"
+learning_rate="0.00001"
+sbatch run_non_linear_sldsc_marginal_updates.sh $trait_name $preprocessed_data_for_non_linear_sldsc_dir $non_linear_sldsc_results_dir $model_type $samp_size $training_chromosomes $evaluation_chromosomes $ld_type $learn_intercept $learning_rate
+
+
+learn_intercept="learn_intercept" # Or "fixed_intercept"
+model_type="neural_network_no_drops_scale"
+sbatch run_non_linear_sldsc_marginal_updates.sh $trait_name $preprocessed_data_for_non_linear_sldsc_dir $non_linear_sldsc_results_dir $model_type $samp_size $training_chromosomes $evaluation_chromosomes $ld_type $learn_intercept $learning_rate
+
+
+learn_intercept="learn_intercept" # Or "fixed_intercept"
+model_type="neural_network_layer_norm"
+sbatch run_non_linear_sldsc_marginal_updates.sh $trait_name $preprocessed_data_for_non_linear_sldsc_dir $non_linear_sldsc_results_dir $model_type $samp_size $training_chromosomes $evaluation_chromosomes $ld_type $learn_intercept $learning_rate
+
+
+
+trait_name="blood_WHITE_COUNT"
+samp_size="326723"
+model_type="neural_network_layer_norm_experiment"
+training_chromosomes="all"
+evaluation_chromosomes="chr_14"
+ld_type="in_sample_ld" # or 1kg_ld_correction_True, or 1kg_ld_correction_False
+learn_intercept="fixed_intercept" # Or "fixed_intercept"
+learning_rate="0.000001"
+sbatch run_non_linear_sldsc_marginal_updates.sh $trait_name $preprocessed_data_for_non_linear_sldsc_dir $non_linear_sldsc_results_dir $model_type $samp_size $training_chromosomes $evaluation_chromosomes $ld_type $learn_intercept $learning_rate
+
+
+learn_intercept="learn_intercept" # Or "fixed_intercept"
+model_type="neural_network_no_drops_scale"
+sbatch run_non_linear_sldsc_marginal_updates.sh $trait_name $preprocessed_data_for_non_linear_sldsc_dir $non_linear_sldsc_results_dir $model_type $samp_size $training_chromosomes $evaluation_chromosomes $ld_type $learn_intercept $learning_rate
+
+
+learn_intercept="learn_intercept" # Or "fixed_intercept"
+model_type="neural_network_layer_norm"
+sbatch run_non_linear_sldsc_marginal_updates.sh $trait_name $preprocessed_data_for_non_linear_sldsc_dir $non_linear_sldsc_results_dir $model_type $samp_size $training_chromosomes $evaluation_chromosomes $ld_type $learn_intercept $learning_rate
+
+
+trait_name="blood_WHITE_COUNT"
+samp_size="326723"
+model_type="neural_network_layer_norm_experiment"
+training_chromosomes="all"
+evaluation_chromosomes="chr_14"
+ld_type="in_sample_ld" # or 1kg_ld_correction_True, or 1kg_ld_correction_False
+learn_intercept="fixed_intercept" # Or "fixed_intercept"
+learning_rate="0.0000001"
+sbatch run_non_linear_sldsc_marginal_updates.sh $trait_name $preprocessed_data_for_non_linear_sldsc_dir $non_linear_sldsc_results_dir $model_type $samp_size $training_chromosomes $evaluation_chromosomes $ld_type $learn_intercept $learning_rate
+
+
+learn_intercept="learn_intercept" # Or "fixed_intercept"
+model_type="neural_network_no_drops_scale"
+sbatch run_non_linear_sldsc_marginal_updates.sh $trait_name $preprocessed_data_for_non_linear_sldsc_dir $non_linear_sldsc_results_dir $model_type $samp_size $training_chromosomes $evaluation_chromosomes $ld_type $learn_intercept $learning_rate
+
+
+learn_intercept="learn_intercept" # Or "fixed_intercept"
+model_type="neural_network_layer_norm"
+sbatch run_non_linear_sldsc_marginal_updates.sh $trait_name $preprocessed_data_for_non_linear_sldsc_dir $non_linear_sldsc_results_dir $model_type $samp_size $training_chromosomes $evaluation_chromosomes $ld_type $learn_intercept $learning_rate
+
+fi
+
+
+
+
+
+
+
+
+
+
+
+if false; then
+trait_name="blood_WHITE_COUNT"
+samp_size="326723"
+model_type="neural_network_batch_norm"
+training_chromosomes="all"
+evaluation_chromosomes="chr_14"
+ld_type="in_sample_ld" # or 1kg_ld_correction_True, or 1kg_ld_correction_False
+learn_intercept="fixed_intercept" # Or "fixed_intercept"
+sbatch run_non_linear_sldsc_marginal_updates.sh $trait_name $preprocessed_data_for_non_linear_sldsc_dir $non_linear_sldsc_results_dir $model_type $samp_size $training_chromosomes $evaluation_chromosomes $ld_type $learn_intercept
+
+
+trait_name="blood_WHITE_COUNT"
+samp_size="326723"
+model_type="neural_network_layer_norm"
+training_chromosomes="all"
+evaluation_chromosomes="chr_14"
+ld_type="in_sample_ld" # or 1kg_ld_correction_True, or 1kg_ld_correction_False
+learn_intercept="fixed_intercept" # Or "fixed_intercept"
+sbatch run_non_linear_sldsc_marginal_updates.sh $trait_name $preprocessed_data_for_non_linear_sldsc_dir $non_linear_sldsc_results_dir $model_type $samp_size $training_chromosomes $evaluation_chromosomes $ld_type $learn_intercept
+fi
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 trait_name="blood_WHITE_COUNT"
 samp_size="326723"

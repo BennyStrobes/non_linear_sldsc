@@ -423,6 +423,50 @@ def init_non_linear_no_drops_mapping_from_genomic_annotations_to_gamma(annotatio
 
 	return model
 
+def init_non_linear_batch_norm_mapping_from_genomic_annotations_to_gamma(annotation_data_dimension, nn_dimension, scale_boolean):
+	# Initialize Neural network model
+	model = tf.keras.models.Sequential()
+	if scale_boolean:
+		model.add(tf.keras.layers.experimental.preprocessing.Normalization())
+	model.add(tf.keras.layers.Dense(units=nn_dimension, activation='relu', input_dim=annotation_data_dimension))
+	model.add(tf.keras.layers.BatchNormalization())
+	model.add(tf.keras.layers.Dense(units=nn_dimension, activation='relu'))
+	model.add(tf.keras.layers.BatchNormalization())
+	model.add(tf.keras.layers.Dense(units=1, activation='softplus'))
+
+	return model
+
+
+def init_non_linear_layer_norm_mapping_from_genomic_annotations_to_gamma(annotation_data_dimension, nn_dimension, scale_boolean):
+	# Initialize Neural network model
+	model = tf.keras.models.Sequential()
+	if scale_boolean:
+		model.add(tf.keras.layers.experimental.preprocessing.Normalization())
+	model.add(tf.keras.layers.Dense(units=nn_dimension, activation='relu', input_dim=annotation_data_dimension))
+	model.add(tf.keras.layers.LayerNormalization())
+	model.add(tf.keras.layers.Dense(units=nn_dimension, activation='relu'))
+	model.add(tf.keras.layers.LayerNormalization())
+	model.add(tf.keras.layers.Dense(units=1, activation='softplus'))
+
+	return model
+
+def init_non_linear_layer_norm_experiment_mapping_from_genomic_annotations_to_gamma(annotation_data_dimension, nn_dimension, scale_boolean):
+	# Initialize Neural network model
+	model = tf.keras.models.Sequential()
+	if scale_boolean:
+		model.add(tf.keras.layers.experimental.preprocessing.Normalization())
+	model.add(tf.keras.layers.Dense(units=nn_dimension, activation='relu', input_dim=annotation_data_dimension))
+	model.add(tf.keras.layers.LayerNormalization())
+	model.add(tf.keras.layers.Dense(units=nn_dimension, activation='relu'))
+	model.add(tf.keras.layers.LayerNormalization())
+	model.add(tf.keras.layers.Dense(units=nn_dimension, activation='relu'))
+	model.add(tf.keras.layers.LayerNormalization())
+	model.add(tf.keras.layers.Dense(units=nn_dimension, activation='relu'))
+	model.add(tf.keras.layers.LayerNormalization())
+	model.add(tf.keras.layers.Dense(units=1, activation='softplus'))
+
+	return model
+
 def init_non_linear_mapping_from_genomic_annotations_to_gamma(annotation_data_dimension, dropout_rate):
 	# Initialize Neural network model
 	model = tf.keras.models.Sequential()
@@ -477,6 +521,12 @@ def initialize_genomic_anno_model(model_type, annotation_data_dimension):
 		genomic_anno_to_gamma_model = init_non_linear_no_drops_mapping_from_genomic_annotations_to_gamma(annotation_data_dimension, 64, False)
 	elif model_type == 'neural_network_no_drops_scale':
 		genomic_anno_to_gamma_model = init_non_linear_no_drops_mapping_from_genomic_annotations_to_gamma(annotation_data_dimension, 64, True)
+	elif model_type == 'neural_network_batch_norm':
+		genomic_anno_to_gamma_model = init_non_linear_batch_norm_mapping_from_genomic_annotations_to_gamma(annotation_data_dimension, 64, True)
+	elif model_type == 'neural_network_layer_norm':
+		genomic_anno_to_gamma_model = init_non_linear_layer_norm_mapping_from_genomic_annotations_to_gamma(annotation_data_dimension, 64, True)
+	elif model_type == 'neural_network_layer_norm_experiment':
+		genomic_anno_to_gamma_model = init_non_linear_layer_norm_experiment_mapping_from_genomic_annotations_to_gamma(annotation_data_dimension, 64, True)
 	elif model_type == 'linear_model':
 		genomic_anno_to_gamma_model = init_linear_mapping_from_genomic_annotations_to_gamma(annotation_data_dimension)
 	elif model_type == 'exp_linear_model':
@@ -577,13 +627,13 @@ def calculate_loss_on_evaluation_data(evaluation_window_data, genomic_anno_to_ga
 	return epoch_eval_loss, genomic_anno_to_gamma_model, log_intercept_variable
 
 
-def marginal_non_linear_sldsc(window_data, evaluation_window_data, samp_size, model_type, learn_intercept, temp_output_model_root, max_epochs=5):
+def marginal_non_linear_sldsc(window_data, evaluation_window_data, samp_size, model_type, learn_intercept, temp_output_model_root, learning_rate, max_epochs=200):
 	# Number of annotations
 	annotation_data_dimension = get_annotation_data_dimension(window_data)
 
 	# Initialize mapping from annotations to per snp heritability
 	genomic_anno_to_gamma_model = initialize_genomic_anno_model(model_type, annotation_data_dimension)
-	optimizer = tf.keras.optimizers.Adam()
+	optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
 	
 	# Whether or not to learn intercept in LDSC
 	# Initial value is np.log(np.exp(1)-1.0) [which equals 1 when put through softplus activation function]
@@ -615,6 +665,7 @@ def marginal_non_linear_sldsc(window_data, evaluation_window_data, samp_size, mo
 		print('###################################')
 		start_time = time.time()
 		for window_counter, window_iter in enumerate(np.random.permutation(range(num_windows))):
+			print(window_counter)
 			# Load in data for this window
 			window_name = window_data.iloc[window_iter]['window_name']
 
@@ -663,7 +714,8 @@ def marginal_non_linear_sldsc(window_data, evaluation_window_data, samp_size, mo
 		print('iteration run time: ' + str(end_time-start_time))
 
 		# At the end of each epoch do some stuff
-		if np.mod(epoch_iter, 5) == 0:
+		#if np.mod(epoch_iter, 5) == 0:
+		if True:
 			# Save model data
 			genomic_anno_to_gamma_model.save(temp_output_model_root + '_' + str(epoch_iter))
 			np.save(temp_output_model_root + '_intercept_variable_' + str(epoch_iter) + '.npy', np.asarray(tf.math.softplus(log_intercept_variable)))
@@ -776,6 +828,7 @@ training_chromosome_type = sys.argv[6]
 evaluation_chromosome_type = sys.argv[7]
 ld_type = sys.argv[8]
 learn_intercept = sys.argv[9]
+learning_rate_str = sys.argv[10]
 
 
 
@@ -795,10 +848,10 @@ window_data = load_in_data(input_dir, trait_name, ld_type, training_chromosomes)
 evaluation_window_data = load_in_data(input_dir, trait_name, ld_type, evaluation_chromosomes)
 
 # Output root stem
-model_output_root = output_dir + trait_name + '_nonlinear_sldsc_marginal_updates_gamma_likelihood_results_training_data_' + model_type + '_' + learn_intercept + '_' + ld_type + '_' + training_chromosome_type + '_train_' + evaluation_chromosome_type + '_eval' + '_annotations_to_gamma_model'
+model_output_root = output_dir + trait_name + '_nonlinear_sldsc_marginal_updates_gamma_likelihood_results_training_data_' + model_type + '_' + learn_intercept + '_' + ld_type + '_' + learning_rate_str + '_' + training_chromosome_type + '_train_' + evaluation_chromosome_type + '_eval' + '_annotations_to_gamma_model'
 
 # Model training
-genomic_anno_to_gamma_model = marginal_non_linear_sldsc(window_data, evaluation_window_data, samp_size, model_type, learn_intercept, model_output_root, max_epochs=max_epochs)
+genomic_anno_to_gamma_model = marginal_non_linear_sldsc(window_data, evaluation_window_data, samp_size, model_type, learn_intercept, model_output_root, float(learning_rate_str), max_epochs=max_epochs)
 
 
 # Save TensorFlow model

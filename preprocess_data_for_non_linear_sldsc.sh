@@ -18,6 +18,5 @@ for chrom_num in {1..22}; do
 done
 fi
 
-if false; then
+
 python3 calculate_total_number_of_snps.py $preprocessed_data_for_non_linear_sldsc_dir $trait_name
-fi
