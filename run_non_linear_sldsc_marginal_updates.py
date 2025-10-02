@@ -1,21 +1,21 @@
 import sys
-sys.path.remove('/n/app/python/3.6.0/lib/python3.6/site-packages')
 import numpy as np 
 import pandas as pd
 import os
 import pdb
 import tensorflow as tf
-import tensorflow_recommenders as tfrs
 import gzip
 import time
-from numba import njit, prange, jit
-from joblib import Parallel, delayed
-from scipy.stats import gamma
-os.environ['OPENBLAS_NUM_THREADS'] = '1'
-os.environ['MKL_NUM_THREADS'] = '1'
-from joblib.externals.loky import set_loky_pickler
-from joblib import wrap_non_picklable_objects
+#from scipy.stats import gamma
+#os.environ['OPENBLAS_NUM_THREADS'] = '20'
+#os.environ['MKL_NUM_THREADS'] = '20'
+#from joblib.externals.loky import set_loky_pickler
+#from joblib import wrap_non_picklable_objects
+from tensorflow.keras.layers import Conv1D, Dense, BatchNormalization, Activation, GlobalAveragePooling1D, Add, Input, Flatten
+from tensorflow.keras import Model
 
+#tf.config.threading.set_inter_op_parallelism_threads(20)
+#tf.config.threading.set_intra_op_parallelism_threads(20)
 
 def get_training_and_evaluation_chromosomes(training_chromosome_type, evaluation_chromosome_type):
 	if evaluation_chromosome_type == 'chr_14':
@@ -139,8 +139,9 @@ def load_in_data(input_dir, trait_name, ld_type, training_chromosomes):
 	middle_variant_indices = []
 	regression_variant_indices = []
 	middle_regression_variant_indices = []
+	ref_alleles = []
 
-
+	sequences = []
 
 	for chrom_num in range(1,23):
 		if chrom_num not in training_chromosomes:
@@ -171,13 +172,15 @@ def load_in_data(input_dir, trait_name, ld_type, training_chromosomes):
 			middle_regression_variant_indices.append(data[7])
 			squared_ld.append(data[8])
 			regression_snps_squared_ld.append(data[9])
+			sequences.append(data[10])
+			ref_alleles.append(data[11])
 		f.close()
 	# Quick error checking
 	if len(np.unique(window_names)) != len(window_names):
 		print('assumption error')
 		pdb.set_trace()
 	# Put data in pandas df
-	dd = {'window_name': window_names, 'variant_id_file': variant_id, 'beta_file': beta, 'genomic_annotation_file':genomic_annotation, 'middle_variant_indices_file':middle_variant_indices, 'regression_variant_indices_file':regression_variant_indices, 'middle_regression_variant_indices_file': middle_regression_variant_indices, 'beta_se_file': beta_se, 'squared_ld_file': squared_ld, 'regression_snps_squared_ld_file':regression_snps_squared_ld}
+	dd = {'window_name': window_names, 'variant_id_file': variant_id, 'beta_file': beta, 'sequence_data_file': sequences, 'genomic_annotation_file':genomic_annotation, 'middle_variant_indices_file':middle_variant_indices, 'regression_variant_indices_file':regression_variant_indices, 'middle_regression_variant_indices_file': middle_regression_variant_indices, 'beta_se_file': beta_se, 'squared_ld_file': squared_ld, 'regression_snps_squared_ld_file':regression_snps_squared_ld, 'reference_alleles': ref_alleles}
 	df = pd.DataFrame(data=dd)
 	return df
 
@@ -195,54 +198,6 @@ def update_gamma_distributions(window_data, window_to_gamma, genomic_anno_to_gam
 		window_to_gamma[window_name] = window_gamma[:,0]
 
 	return window_to_gamma
-
-@jit
-def multivariate_updates(gamma, window_D_mat, window_s_inv_2_diag, window_marginal_betas):
-	covariance = np.linalg.inv(np.diag(1.0/gamma) + window_D_mat)
-	mu = np.dot(covariance, window_s_inv_2_diag*window_marginal_betas)
-	return mu, covariance
-
-def softplus_np(x): return np.log1p(np.exp(-np.abs(x))) + np.maximum(x, 0)
-
-def relu_np(x): return np.maximum(x, 0)
-
-@wrap_non_picklable_objects
-def update_beta_distribution_in_single_window(window_name, window_s_inv_2_diag_file, window_D_mat_file, window_marginal_betas_file, window_genomic_annotation_file, window_middle_variant_indices_file, vi_iter, weights, model_type):
-	#window_srs_inv = np.load(window_srs_inv_file)
-	window_s_inv_2_diag = np.load(window_s_inv_2_diag_file)
-	window_D_mat = np.load(window_D_mat_file)
-	window_marginal_betas = np.load(window_marginal_betas_file)
-	genomic_anno = np.load(window_genomic_annotation_file)
-
-
-	#diff=genomic_anno_to_gamma_model.predict(genomic_anno) - tf.math.softplus(tf.matmul(tf.nn.relu(tf.matmul(tf.nn.relu(tf.matmul(genomic_anno, weights[0]) + weights[1]), weights[2]) + weights[3]), weights[4]) + weights[5])
-	if weights == None:
-		gamma = np.ones(len(window_marginal_betas))*1e-5
-	else:
-		if model_type == 'neural_network':
-			gamma = softplus_np(np.dot(relu_np(np.dot(relu_np(np.dot(genomic_anno, weights[0]) + weights[1]), weights[2]) + weights[3]), weights[4]) + weights[5])
-			gamma = gamma[:,0]
-		elif model_type == 'linear_model':
-			gamma = softplus_np(np.dot(genomic_anno, weights[0]) + weights[1])
-			gamma = gamma[:,0]
-		elif model_type == 'intercept_model':
-			genomic_anno = np.ones((genomic_anno.shape[0],1))
-			gamma = softplus_np(np.dot(genomic_anno, weights[0]) + weights[1])
-			gamma = gamma[:,0]
-
-	beta_mu, beta_covariance = multivariate_updates(gamma, window_D_mat, window_s_inv_2_diag, window_marginal_betas)
-	beta_var = np.diag(beta_covariance)
-
-	beta_squared = np.square(beta_mu) + beta_var
-
-	
-	middle_indices = np.load(window_middle_variant_indices_file)
-
-	# Add to training data objects
-	beta_squared_train = beta_squared[middle_indices]
-	genomic_anno_train = genomic_anno[middle_indices,:]
-
-	return (beta_squared_train, genomic_anno_train)
 
 
 
@@ -420,7 +375,37 @@ def init_non_linear_no_drops_mapping_from_genomic_annotations_to_gamma(annotatio
 	model.add(tf.keras.layers.Dense(units=nn_dimension, activation='relu', input_dim=annotation_data_dimension))
 	model.add(tf.keras.layers.Dense(units=nn_dimension, activation='relu'))
 	model.add(tf.keras.layers.Dense(units=1, activation='softplus'))
+	return model
 
+def init_deep_non_linear_no_drops_mapping_from_genomic_annotations_to_gamma(annotation_data_dimension, nn_dimension, scale_boolean):
+	# Initialize Neural network model
+	model = tf.keras.models.Sequential()
+	if scale_boolean:
+		model.add(tf.keras.layers.experimental.preprocessing.Normalization())
+	model.add(tf.keras.layers.Dense(units=nn_dimension, activation='relu', input_dim=annotation_data_dimension))
+	model.add(tf.keras.layers.Dense(units=nn_dimension, activation='relu'))
+	model.add(tf.keras.layers.Dense(units=nn_dimension, activation='relu'))
+	model.add(tf.keras.layers.Dense(units=nn_dimension, activation='relu'))
+	model.add(tf.keras.layers.Dense(units=1, activation='softplus'))
+	return model
+
+def init_deep_non_linear_mapping_from_genomic_annotations_to_gamma(annotation_data_dimension, nn_dimension, dropout_rate):
+	# Initialize Neural network model
+	model = tf.keras.models.Sequential()
+	model.add(tf.keras.layers.Dropout(dropout_rate))
+	model.add(tf.keras.layers.Dense(units=nn_dimension, activation='relu', input_dim=annotation_data_dimension))
+	model.add(tf.keras.layers.Dropout(dropout_rate))
+	model.add(tf.keras.layers.Dense(units=nn_dimension, activation='relu'))
+	model.add(tf.keras.layers.Dropout(dropout_rate))
+	model.add(tf.keras.layers.Dense(units=nn_dimension, activation='relu'))
+	model.add(tf.keras.layers.Dropout(dropout_rate))
+	model.add(tf.keras.layers.Dense(units=nn_dimension, activation='relu'))
+	model.add(tf.keras.layers.Dropout(dropout_rate))
+	model.add(tf.keras.layers.Dense(units=nn_dimension, activation='relu'))
+	model.add(tf.keras.layers.Dropout(dropout_rate))
+	model.add(tf.keras.layers.Dense(units=nn_dimension, activation='relu'))
+	model.add(tf.keras.layers.Dropout(dropout_rate))
+	model.add(tf.keras.layers.Dense(units=1, activation='softplus'))
 	return model
 
 def init_non_linear_batch_norm_mapping_from_genomic_annotations_to_gamma(annotation_data_dimension, nn_dimension, scale_boolean):
@@ -479,18 +464,65 @@ def init_non_linear_mapping_from_genomic_annotations_to_gamma(annotation_data_di
 
 	return model
 
-def init_reduced_dimension_interaction_from_genomic_annotations_to_gamma(annotation_data_dimension, latent_space_size=5):
+def init_single_input_linear_mapping_with_intercept():
+	model = tf.keras.models.Sequential()
+	model.add(tf.keras.layers.Dense(units=1,activation='softplus', input_dim=1))	
+	return model
+
+def init_single_input_small_nn(dropout_rate=.1):
 	# Initialize Neural network model
 	model = tf.keras.models.Sequential()
-	model.add(tf.keras.layers.Dense(units=latent_space_size, activation='relu', input_dim=annotation_data_dimension))
-	model.add(tfrs.layers.dcn.Cross())
+	#model.add(tf.keras.layers.Dropout(dropout_rate))
+	model.add(tf.keras.layers.Dense(units=4, activation='relu', input_dim=1))
+	#model.add(tf.keras.layers.Dropout(dropout_rate))
+	model.add(tf.keras.layers.Dense(units=4, activation='relu'))
+	#model.add(tf.keras.layers.Dropout(dropout_rate))
+	model.add(tf.keras.layers.Dense(units=4, activation='relu'))
+	#model.add(tf.keras.layers.Dropout(dropout_rate))
+	model.add(tf.keras.layers.Dense(units=4, activation='relu'))
+	#model.add(tf.keras.layers.Dropout(dropout_rate))
 	model.add(tf.keras.layers.Dense(units=1, activation='softplus'))
+
 	return model
+
+def init_two_input_small_nn(dropout_rate=.1):
+	# Initialize Neural network model
+	model = tf.keras.models.Sequential()
+	#model.add(tf.keras.layers.Dropout(dropout_rate))
+	model.add(tf.keras.layers.Dense(units=6, activation='relu', input_dim=2))
+	#model.add(tf.keras.layers.Dropout(dropout_rate))
+	model.add(tf.keras.layers.Dense(units=4, activation='relu'))
+	#model.add(tf.keras.layers.Dropout(dropout_rate))
+	model.add(tf.keras.layers.Dense(units=4, activation='relu'))
+	#model.add(tf.keras.layers.Dropout(dropout_rate))
+	model.add(tf.keras.layers.Dense(units=4, activation='relu'))
+	#model.add(tf.keras.layers.Dropout(dropout_rate))
+	model.add(tf.keras.layers.Dense(units=1, activation='softplus'))
+
+	return model
+
+
+def init_intercept_model(annotation_data_dimension):
+	# Initialize Neural network model
+	initializer = tf.keras.initializers.Constant(0.541324854612918)
+
+	model = tf.keras.models.Sequential()
+	model.add(tf.keras.layers.Dense(units=1, input_dim=annotation_data_dimension, kernel_initializer=initializer))
+
+	return model
+
 
 def init_linear_mapping_from_genomic_annotations_to_gamma(annotation_data_dimension):
 	# Initialize Neural network model
-	model = tf.keras.models.Sequential()
-	model.add(tf.keras.layers.Dense(units=1, activation='softplus', input_dim=annotation_data_dimension))
+
+	if annotation_data_dimension == 1.0:
+		initializer = tf.keras.initializers.Constant(-17.0)
+
+		model = tf.keras.models.Sequential()
+		model.add(tf.keras.layers.Dense(units=1,activation='softplus',use_bias=False, input_dim=annotation_data_dimension, kernel_initializer=initializer))
+	else:
+		model = tf.keras.models.Sequential()
+		model.add(tf.keras.layers.Dense(units=1,activation='softplus', input_dim=annotation_data_dimension))
 
 	return model
 
@@ -505,10 +537,193 @@ def get_annotation_data_dimension(window_data):
 	genomic_anno_dim = np.load(window_data['genomic_annotation_file'][0]).shape[1]
 	return genomic_anno_dim
 
+def get_sequence_data_dimension(window_data):
+	sequence_data_dim = np.load(window_data['sequence_data_file'][0]).shape[1]
+	return sequence_data_dim
+
+def init_non_linear_sequence_conv_neural_net(sequence_data_dimension):
+	model = tf.keras.models.Sequential()
+	model.add(tf.keras.layers.Conv1D(32, 3, activation='relu', input_shape=(sequence_data_dimension, 4)))
+	model.add(tf.keras.layers.MaxPooling1D())
+	model.add(tf.keras.layers.Conv1D(64, 3, activation='relu'))
+	model.add(tf.keras.layers.MaxPooling1D())
+	model.add(tf.keras.layers.Conv1D(64, 3, activation='relu'))
+	model.add(tf.keras.layers.Flatten())
+	model.add(tf.keras.layers.Dense(64, activation='relu'))
+	model.add(tf.keras.layers.Dense(units=1, activation='softplus'))
+
+	return model
+
+
+def init_non_linear_big_sequence_conv_neural_net(sequence_data_dimension):
+	model = tf.keras.models.Sequential()
+	model.add(tf.keras.layers.Conv1D(64, 3, activation='relu', input_shape=(sequence_data_dimension, 4)))
+	model.add(tf.keras.layers.MaxPooling1D())
+	model.add(tf.keras.layers.Conv1D(128, 3, activation='relu'))
+	model.add(tf.keras.layers.MaxPooling1D())
+	model.add(tf.keras.layers.Conv1D(128, 3, activation='relu'))
+	model.add(tf.keras.layers.Flatten())
+	model.add(tf.keras.layers.Dense(128, activation='relu'))
+	model.add(tf.keras.layers.Dense(units=1, activation='softplus'))
+
+	return model
+
+def init_non_linear_sequence_conv_neural_net_w_indicator(sequence_data_dimension):
+	model = tf.keras.models.Sequential()
+	model.add(tf.keras.layers.Conv1D(32, 3, activation='relu', input_shape=(sequence_data_dimension, 5)))
+	model.add(tf.keras.layers.MaxPooling1D())
+	model.add(tf.keras.layers.Conv1D(64, 3, activation='relu'))
+	model.add(tf.keras.layers.MaxPooling1D())
+	model.add(tf.keras.layers.Conv1D(64, 3, activation='relu'))
+	model.add(tf.keras.layers.Flatten())
+	model.add(tf.keras.layers.Dense(64, activation='relu'))
+	model.add(tf.keras.layers.Dense(units=1, activation='softplus'))
+
+	return model
 
 
 
-def initialize_genomic_anno_model(model_type, annotation_data_dimension):
+def init_non_linear_sequence_conv_neural_net_w_point_mutation2(sequence_data_dimension):
+	input1 = tf.keras.layers.Input(shape=(sequence_data_dimension,4))
+	input2 = tf.keras.layers.Input(shape=(8))
+	layer1 = tf.keras.layers.Conv1D(64, 5, activation='relu', input_shape=(sequence_data_dimension, 4))(input1)
+	layer2 = tf.keras.layers.MaxPooling1D()(layer1)
+	layer3 = tf.keras.layers.Conv1D(128, 5, activation='relu')(layer2)
+	layer4 = tf.keras.layers.MaxPooling1D()(layer3)
+	layer5 = tf.keras.layers.Conv1D(128, 5, activation='relu')(layer4)
+	layer6 = tf.keras.layers.Flatten()(layer5)
+	layer7 = tf. keras.layers.Concatenate(axis=1)([layer6, input2])
+	layer8= tf.keras.layers.Dense(64, activation='relu')(layer7)
+	layer9= tf.keras.layers.Dense(64, activation='relu')(layer8)
+	output = tf.keras.layers.Dense(units=1, activation='softplus')(layer9)
+
+	model = tf.keras.models.Model([input1, input2], output)
+
+
+	return model
+
+
+def init_non_linear_sequence_conv_neural_net_michael(sequence_data_dimension, n):
+	#n = 2 # blocks per channel size
+	channels = [32, 64, 128]
+
+	input1 = tf.keras.layers.Input(shape=(sequence_data_dimension,4))
+	x = Conv1D(channels[0], kernel_size=3, padding="same")(input1)
+	x = BatchNormalization()(x)
+	x = Activation(tf.nn.relu)(x)
+
+	for c in channels:
+		for i in range(n):
+			subsampling = i == 0 and c > 32
+			strides = 2 if subsampling else 1
+			y = Conv1D(c, kernel_size= 3, padding="same", strides=strides)(x)
+			y = BatchNormalization()(y)
+			y = Activation(tf.nn.relu)(y)
+			y = Conv1D(c, kernel_size= 3, padding="same")(y)
+			y = BatchNormalization()(y)        
+			if subsampling:
+				x = Conv1D(c, kernel_size= 1, strides= 2, padding="same")(x)
+			x = Add()([x, y])
+			x = Activation(tf.nn.relu)(x)
+
+	x = GlobalAveragePooling1D()(x)
+	x = Flatten()(x)
+	output = Dense(1, activation=tf.nn.softplus)(x)
+	model = tf.keras.models.Model(input1, output)
+	return model
+
+
+def init_non_linear_sequence_conv_neural_net_w_point_mutation_michael(sequence_data_dimension, n):
+
+	#n = 2 # blocks per channel size
+	channels = [32, 64, 128]
+
+	input1 = tf.keras.layers.Input(shape=(sequence_data_dimension,4))
+	input2 = tf.keras.layers.Input(shape=(8))
+	x = Conv1D(channels[0], kernel_size=3, padding="same")(input1)
+	x = BatchNormalization()(x)
+	x = Activation(tf.nn.relu)(x)
+
+	for c in channels:
+		for i in range(n):
+			subsampling = i == 0 and c > 32
+			strides = 2 if subsampling else 1
+			y = Conv1D(c, kernel_size= 3, padding="same", strides=strides)(x)
+			y = BatchNormalization()(y)
+			y = Activation(tf.nn.relu)(y)
+			y = Conv1D(c, kernel_size= 3, padding="same")(y)
+			y = BatchNormalization()(y)        
+			if subsampling:
+				x = Conv1D(c, kernel_size= 1, strides= 2, padding="same")(x)
+			x = Add()([x, y])
+			x = Activation(tf.nn.relu)(x)
+
+	x = GlobalAveragePooling1D()(x)
+	x = Flatten()(x)
+	x = tf.keras.layers.Concatenate(axis=1)([x, input2])
+	x= tf.keras.layers.Dense(64, activation='relu')(x)
+	x = BatchNormalization()(x)     
+	x= tf.keras.layers.Dense(64, activation='relu')(x)
+	output = Dense(1, activation=tf.nn.softplus)(x)
+	model = tf.keras.models.Model([input1, input2], output)
+
+	return model
+
+
+
+def init_non_linear_sequence_layered_conv_neural_net(sequence_data_dimension):
+	input1 = tf.keras.layers.Input(shape=(sequence_data_dimension,4))
+	layer1 = tf.keras.layers.Conv1D(32, 3, activation='relu', input_shape=(sequence_data_dimension, 4))(input1)
+	layer2 = tf.keras.layers.MaxPooling1D()(layer1)
+	layer3 = tf.keras.layers.Conv1D(64, 3, activation='relu')(layer2)
+	layer4 = tf.keras.layers.MaxPooling1D()(layer3)
+	layer5 = tf.keras.layers.Conv1D(64, 3, activation='relu')(layer4)
+	layer6 = tf.keras.layers.Flatten()(layer5)
+	layer7= tf.keras.layers.Dense(64, activation='relu')(layer6)
+	output = tf.keras.layers.Dense(units=1, activation='softplus')(layer7)
+
+	model = tf.keras.models.Model(input1, output)
+	return model
+
+def init_non_linear_sequence_conv_neural_net_w_point_mutation(sequence_data_dimension):
+	input1 = tf.keras.layers.Input(shape=(sequence_data_dimension,4))
+	input2 = tf.keras.layers.Input(shape=(8))
+	layer1 = tf.keras.layers.Conv1D(32, 3, activation='relu', input_shape=(sequence_data_dimension, 4))(input1)
+	layer2 = tf.keras.layers.MaxPooling1D()(layer1)
+	layer3 = tf.keras.layers.Conv1D(64, 3, activation='relu')(layer2)
+	layer4 = tf.keras.layers.MaxPooling1D()(layer3)
+	layer5 = tf.keras.layers.Conv1D(64, 3, activation='relu')(layer4)
+	layer6 = tf.keras.layers.Flatten()(layer5)
+	layer7 = tf. keras.layers.Concatenate(axis=1)([layer6, input2])
+	layer8= tf.keras.layers.Dense(64, activation='relu')(layer7)
+	layer9= tf.keras.layers.Dense(64, activation='relu')(layer8)
+	output = tf.keras.layers.Dense(units=1, activation='softplus')(layer9)
+
+	model = tf.keras.models.Model([input1, input2], output)
+	return model
+
+def init_non_linear_sequence_conv_neural_net_w_point_mutation_parameterized(sequence_data_dimension, pool_size=3, channel_size_multiplier=1):
+	input1 = tf.keras.layers.Input(shape=(sequence_data_dimension,4))
+	input2 = tf.keras.layers.Input(shape=(8))
+	layer1 = tf.keras.layers.Conv1D(32*channel_size_multiplier, pool_size, activation='relu', input_shape=(sequence_data_dimension, 4))(input1)
+	layer2 = tf.keras.layers.MaxPooling1D()(layer1)
+	layer3 = tf.keras.layers.Conv1D(64*channel_size_multiplier, pool_size, activation='relu')(layer2)
+	layer4 = tf.keras.layers.MaxPooling1D()(layer3)
+	layer5 = tf.keras.layers.Conv1D(64*channel_size_multiplier, pool_size, activation='relu')(layer4)
+	layer6 = tf.keras.layers.Flatten()(layer5)
+	layer7 = tf. keras.layers.Concatenate(axis=1)([layer6, input2])
+	layer8= tf.keras.layers.Dense(64, activation='relu')(layer7)
+	layer9= tf.keras.layers.Dense(64, activation='relu')(layer8)
+	output = tf.keras.layers.Dense(units=1, activation='softplus')(layer9)
+
+	model = tf.keras.models.Model([input1, input2], output)
+
+
+	return model
+
+
+
+def initialize_genomic_anno_model(model_type, annotation_data_dimension, sequence_data_dimension):
 	if model_type == 'neural_network_10':
 		genomic_anno_to_gamma_model = init_non_linear_mapping_from_genomic_annotations_to_gamma(annotation_data_dimension, .10)
 	elif model_type == 'neural_network_20':
@@ -519,6 +734,18 @@ def initialize_genomic_anno_model(model_type, annotation_data_dimension):
 		genomic_anno_to_gamma_model = init_non_linear_mapping_from_genomic_annotations_to_gamma(annotation_data_dimension, .40)
 	elif model_type == 'neural_network_no_drops':
 		genomic_anno_to_gamma_model = init_non_linear_no_drops_mapping_from_genomic_annotations_to_gamma(annotation_data_dimension, 64, False)
+	elif model_type == 'deep_neural_network_no_drops':
+		genomic_anno_to_gamma_model = init_deep_non_linear_no_drops_mapping_from_genomic_annotations_to_gamma(annotation_data_dimension, 64, False)
+	elif model_type == 'deep_neural_network_05':
+		genomic_anno_to_gamma_model = init_deep_non_linear_mapping_from_genomic_annotations_to_gamma(annotation_data_dimension, 64, .05)
+	elif model_type == 'deep_neural_network_10':
+		genomic_anno_to_gamma_model = init_deep_non_linear_mapping_from_genomic_annotations_to_gamma(annotation_data_dimension, 64, .10)
+	elif model_type == 'deep_neural_network_20':
+		genomic_anno_to_gamma_model = init_deep_non_linear_mapping_from_genomic_annotations_to_gamma(annotation_data_dimension, 64, .20)
+	elif model_type == 'deep_neural_network_40':
+		genomic_anno_to_gamma_model = init_deep_non_linear_mapping_from_genomic_annotations_to_gamma(annotation_data_dimension, 64, .40)
+	elif model_type == 'deep_neural_network_60':
+		genomic_anno_to_gamma_model = init_deep_non_linear_mapping_from_genomic_annotations_to_gamma(annotation_data_dimension, 64, .60)
 	elif model_type == 'neural_network_no_drops_scale':
 		genomic_anno_to_gamma_model = init_non_linear_no_drops_mapping_from_genomic_annotations_to_gamma(annotation_data_dimension, 64, True)
 	elif model_type == 'neural_network_batch_norm':
@@ -539,6 +766,35 @@ def initialize_genomic_anno_model(model_type, annotation_data_dimension):
 		genomic_anno_to_gamma_model = init_non_linear_no_drops_mapping_from_genomic_annotations_to_gamma(annotation_data_dimension, 5, False)
 	elif model_type == 'reduced_dimension_neural_network_model_scale':
 		genomic_anno_to_gamma_model = init_non_linear_no_drops_mapping_from_genomic_annotations_to_gamma(annotation_data_dimension, 5, True)
+	elif model_type == 'sequence_conv_neural_net_delta':
+		genomic_anno_to_gamma_model = init_non_linear_sequence_conv_neural_net(sequence_data_dimension)
+	elif model_type == 'sequence_layered_conv_neural_net_delta':
+		genomic_anno_to_gamma_model = init_non_linear_sequence_layered_conv_neural_net(sequence_data_dimension)
+	elif model_type == 'sequence_conv_neural_net' or model_type == 'sequence_conv_neural_net_calibrated_delta' or model_type == 'sequence_conv_neural_net_linearly_calibrated_delta' or model_type == 'sequence_conv_neural_net_nn_combine_sequences':
+		genomic_anno_to_gamma_model = init_non_linear_sequence_conv_neural_net(sequence_data_dimension)
+	elif model_type == 'sequence_conv_neural_net_big':
+		genomic_anno_to_gamma_model = init_non_linear_big_sequence_conv_neural_net(sequence_data_dimension)
+	elif model_type == 'sequence_conv_neural_net_w_indicator':
+		genomic_anno_to_gamma_model = init_non_linear_sequence_conv_neural_net_w_indicator(sequence_data_dimension)
+	elif model_type == 'sequence_conv_neural_net_w_point_mutation':
+		genomic_anno_to_gamma_model = init_non_linear_sequence_conv_neural_net_w_point_mutation(sequence_data_dimension)
+	elif model_type == 'sequence_conv_neural_net_michael1':
+		genomic_anno_to_gamma_model = init_non_linear_sequence_conv_neural_net_michael(sequence_data_dimension, 1)
+	elif model_type == 'sequence_conv_neural_net_michael2':
+		genomic_anno_to_gamma_model = init_non_linear_sequence_conv_neural_net_michael(sequence_data_dimension, 2)
+	elif model_type == 'sequence_conv_neural_net_michael3':
+		genomic_anno_to_gamma_model = init_non_linear_sequence_conv_neural_net_michael(sequence_data_dimension, 3)
+	elif model_type == 'sequence_conv_neural_net_w_point_mutation_michael1':
+		genomic_anno_to_gamma_model = init_non_linear_sequence_conv_neural_net_w_point_mutation_michael(sequence_data_dimension, 1)
+	elif model_type == 'sequence_conv_neural_net_w_point_mutation_michael2':
+		genomic_anno_to_gamma_model = init_non_linear_sequence_conv_neural_net_w_point_mutation_michael(sequence_data_dimension, 2)
+	elif model_type == 'sequence_conv_neural_net_w_point_mutation_michael3':
+		genomic_anno_to_gamma_model = init_non_linear_sequence_conv_neural_net_w_point_mutation_michael(sequence_data_dimension, 3)
+	elif model_type.startswith('sequence_conv_neural_net_w_point_mutation_'):
+		pool_size = int(model_type.split('_')[-2])
+		channel_size_multiplier = int(model_type.split('_')[-1])
+		genomic_anno_to_gamma_model = init_non_linear_sequence_conv_neural_net_w_point_mutation_parameterized(sequence_data_dimension, pool_size=pool_size, channel_size_multiplier=channel_size_multiplier)
+	print(genomic_anno_to_gamma_model.summary())
 	return genomic_anno_to_gamma_model
 
 
@@ -576,7 +832,7 @@ def check_symmetric(a, rtol=1e-05, atol=1e-08):
 	return numpy.allclose(a, a.T, rtol=rtol, atol=atol)
 
 
-def calculate_loss_on_evaluation_data(evaluation_window_data, genomic_anno_to_gamma_model, log_intercept_variable):
+def calculate_loss_on_evaluation_data(evaluation_window_data, genomic_anno_to_gamma_model, log_intercept_model, model_type, gamma_intercept_model, delta_calibration_nn):
 	num_windows = evaluation_window_data.shape[0]
 	epoch_eval_log_likelihoods = []
 	epoch_eval_weights = []
@@ -610,8 +866,36 @@ def calculate_loss_on_evaluation_data(evaluation_window_data, genomic_anno_to_ga
 		# If using intercept, alter genomic annotations
 		if model_type == 'intercept_model':
 			window_genomic_anno = np.ones((len(window_beta), 1))
+		if model_type.startswith('sequ'):
+			window_genomic_anno = np.load(evaluation_window_data.iloc[window_iter]['sequence_data_file'])
+			if model_type.startswith('sequence_conv_neural_net_w_point_mutation'):
+				ref_alleles = np.load(evaluation_window_data.iloc[window_iter]['reference_alleles'])
+				variant_ids = np.load(evaluation_window_data.iloc[window_iter]['variant_id_file'])
+				point_mutation_anno = get_point_mutation_anno(ref_alleles, variant_ids)
+				window_genomic_anno = [window_genomic_anno, point_mutation_anno]
+			elif model_type == 'sequence_conv_neural_net_delta' or model_type == 'sequence_conv_neural_net_calibrated_delta' or model_type == 'sequence_conv_neural_net_linearly_calibrated_delta' or model_type == 'sequence_conv_neural_net_nn_combine_sequences':
+				ref_alleles = np.load(evaluation_window_data.iloc[window_iter]['reference_alleles'])
+				variant_ids = np.load(evaluation_window_data.iloc[window_iter]['variant_id_file'])
+				window_genomic_anno_alt = get_alternate_allele_sequence(window_genomic_anno, variant_ids, ref_alleles)
+			elif model_type == 'sequence_conv_neural_net_w_indicator':
+				window_genomic_anno = add_snp_indicator_to_sequence_anno(window_genomic_anno)
 
-		window_pred_tau = genomic_anno_to_gamma_model(window_genomic_anno, training=False)
+		# Pred taus
+		if model_type == 'sequence_conv_neural_net_delta' or model_type == 'sequence_layered_conv_neural_net_delta':
+			window_pred_tau = gamma_intercept_model(np.ones(squared_ld.shape[1]), training=False) + tf.math.square(genomic_anno_to_gamma_model(window_genomic_anno, training=False) - genomic_anno_to_gamma_model(window_genomic_anno_alt, training=False))
+			log_intercept_variable = log_intercept_model(np.ones(squared_ld.shape[0]), training=False)
+		elif model_type == 'sequence_conv_neural_net_calibrated_delta' or model_type == 'sequence_conv_neural_net_linearly_calibrated_delta':
+			window_pred_tau = delta_calibration_nn(tf.math.square(genomic_anno_to_gamma_model(window_genomic_anno, training=False) - genomic_anno_to_gamma_model(window_genomic_anno_alt, training=False)), training=False)
+			log_intercept_variable = log_intercept_model(np.ones(squared_ld.shape[0]), training=False)
+		elif model_type == 'sequence_conv_neural_net_nn_combine_sequences':
+			s1_pred = genomic_anno_to_gamma_model(window_genomic_anno, training=False)
+			s2_pred = genomic_anno_to_gamma_model(window_genomic_anno_alt, training=False)
+			new_anno = tf.concat([s1_pred,tf.math.square(s1_pred-s2_pred)],axis=1)
+			window_pred_tau = delta_calibration_nn(new_anno, training=False)
+			log_intercept_variable = log_intercept_model(np.ones(squared_ld.shape[0]), training=False)
+		else:
+			window_pred_tau = genomic_anno_to_gamma_model(window_genomic_anno, training=False)
+			log_intercept_variable = log_intercept_model(np.ones(squared_ld.shape[0]), training=False)
 
 		loss_value, log_likelihoods = ldsc_tf_loss_fxn(window_chi_sq, window_pred_tau, samp_size, squared_ld, snp_weights, log_intercept_variable)
 
@@ -626,24 +910,116 @@ def calculate_loss_on_evaluation_data(evaluation_window_data, genomic_anno_to_ga
 
 	return epoch_eval_loss, genomic_anno_to_gamma_model, log_intercept_variable
 
+def get_point_mutation_anno(ref_alleles, variant_ids):
+	dicti = {}
+	dicti['a'] = 0
+	dicti['c'] = 1
+	dicti['t'] = 2
+	dicti['g'] = 3
+	anno = np.zeros((len(ref_alleles), 8)).astype(int)
+	for ii, variant_id in enumerate(variant_ids):
+		a1 = variant_id.split('_')[2].lower()
+		a2 = variant_id.split('_')[3].lower()
+		ref_allele = ref_alleles[ii]
+		if ref_allele == a1:
+			alt_allele = a2
+		elif ref_allele == a2:
+			alt_allele = a1
+		else:
+			print('assumption erororo')
+			pdb.set_trace()
+		anno[ii, dicti[ref_allele]] = 1
+		anno[ii, (dicti[alt_allele] + 4)] =1
+	return anno
+
+def add_snp_indicator_to_sequence_anno(window_genomic_anno):
+	n_data_points = window_genomic_anno.shape[0]
+	window_size = window_genomic_anno.shape[1]
+	middle_pos = np.floor(window_size/2).astype(int)
+	middle_vec = np.zeros(window_size).astype(int)
+	middle_vec[middle_pos] = 1
+	middle_vec = middle_vec.reshape(len(middle_vec),1)
+	new_data = []
+	for ii in range(n_data_points):
+		data_ii = window_genomic_anno[ii]
+		new_data.append(np.hstack((data_ii,middle_vec)))
+	new_data = np.asarray(new_data)
+	return new_data
+
+def get_alternate_allele_sequence(window_genomic_anno, variant_ids, ref_alleles):
+	n_data_points = window_genomic_anno.shape[0]
+	window_size = window_genomic_anno.shape[1]
+	middle_pos = np.floor(window_size/2).astype(int)
+
+	window_genomic_anno_alt = np.copy(window_genomic_anno)
+
+	dicti = {}
+	dicti['g'] = 0
+	dicti['a'] = 1
+	dicti['c'] = 2
+	dicti['t'] = 3
+
+	for ii, variant_id in enumerate(variant_ids):
+		a1 = variant_id.split('_')[2].lower()
+		a2 = variant_id.split('_')[3].lower()
+		ref_allele = ref_alleles[ii]
+		if ref_allele == a1:
+			alt_allele = a2
+		elif ref_allele == a2:
+			alt_allele = a1
+		else:
+			print('assumption erororo')
+			pdb.set_trace()
+
+		if window_genomic_anno_alt[ii, middle_pos, dicti[ref_allele]] != 1.0:
+			print('assumption errorr')
+			pdb.set_trace()
+
+		window_genomic_anno_alt[ii, middle_pos, dicti[ref_allele]] = 0.0
+		window_genomic_anno_alt[ii, middle_pos, dicti[alt_allele]] = 1.0
+
+	return window_genomic_anno_alt
+
+
+
 
 def marginal_non_linear_sldsc(window_data, evaluation_window_data, samp_size, model_type, learn_intercept, temp_output_model_root, learning_rate, max_epochs=200):
 	# Number of annotations
 	annotation_data_dimension = get_annotation_data_dimension(window_data)
+	sequence_data_dimension = get_sequence_data_dimension(window_data)
 
 	# Initialize mapping from annotations to per snp heritability
-	genomic_anno_to_gamma_model = initialize_genomic_anno_model(model_type, annotation_data_dimension)
+	genomic_anno_to_gamma_model = initialize_genomic_anno_model(model_type, annotation_data_dimension, sequence_data_dimension)
 	optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
+
+
+	if model_type == 'sequence_conv_neural_net_delta' or model_type == 'sequence_layered_conv_neural_net_delta':
+		gamma_intercept_model = init_linear_mapping_from_genomic_annotations_to_gamma(1)
+	else:
+		gamma_intercept_model = None
+
+	if model_type == 'sequence_conv_neural_net_calibrated_delta':
+		delta_calibration_nn = init_single_input_small_nn()
+	elif model_type == 'sequence_conv_neural_net_linearly_calibrated_delta':
+		delta_calibration_nn = init_single_input_linear_mapping_with_intercept()
+	elif model_type == 'sequence_conv_neural_net_nn_combine_sequences':
+		delta_calibration_nn = init_two_input_small_nn()
+	else:
+		delta_calibration_nn = None
+
 	
 	# Whether or not to learn intercept in LDSC
 	# Initial value is np.log(np.exp(1)-1.0) [which equals 1 when put through softplus activation function]
 	if learn_intercept == 'learn_intercept':
-		log_intercept_variable = tf.Variable(initial_value=0.541324854612918,trainable=True, name='intercept')
+		log_intercept_model = init_intercept_model(1)
+		learn_intercept_bool = True
 	elif learn_intercept == 'fixed_intercept':
-		log_intercept_variable = tf.Variable(initial_value=0.541324854612918,trainable=False, name='intercept')
+		log_intercept_model = init_intercept_model(1)
+		learn_intercept_bool = False
 	else:
 		print('assumption error: intercept model called ' + learn_intercept + ' not currently implemented')
 		pdb.set_trace()
+
 
 	# Initialize vectors to keep track of training and evaluation loss
 	training_loss = []
@@ -666,6 +1042,7 @@ def marginal_non_linear_sldsc(window_data, evaluation_window_data, samp_size, mo
 		start_time = time.time()
 		for window_counter, window_iter in enumerate(np.random.permutation(range(num_windows))):
 			print(window_counter)
+
 			# Load in data for this window
 			window_name = window_data.iloc[window_iter]['window_name']
 
@@ -696,16 +1073,54 @@ def marginal_non_linear_sldsc(window_data, evaluation_window_data, samp_size, mo
 			# If using intercept, alter genomic annotations
 			if model_type == 'intercept_model':
 				window_genomic_anno = np.ones((len(window_beta), 1))
+			# Everything changes if using sequence data
+			if model_type.startswith('sequ'):
+				window_genomic_anno = np.load(window_data.iloc[window_iter]['sequence_data_file'])
+				if model_type.startswith('sequence_conv_neural_net_w_point_mutation'):
+					ref_alleles = np.load(window_data.iloc[window_iter]['reference_alleles'])
+					variant_ids = np.load(window_data.iloc[window_iter]['variant_id_file'])
+					point_mutation_anno = get_point_mutation_anno(ref_alleles, variant_ids)
+					window_genomic_anno = [window_genomic_anno, point_mutation_anno]
+				elif model_type == 'sequence_conv_neural_net_delta' or model_type == 'sequence_conv_neural_net_calibrated_delta' or model_type == 'sequence_conv_neural_net_linearly_calibrated_delta' or model_type == 'sequence_conv_neural_net_nn_combine_sequences':
+					ref_alleles = np.load(window_data.iloc[window_iter]['reference_alleles'])
+					variant_ids = np.load(window_data.iloc[window_iter]['variant_id_file'])
+					window_genomic_anno_alt = get_alternate_allele_sequence(window_genomic_anno, variant_ids, ref_alleles)
+				elif model_type == 'sequence_conv_neural_net_w_indicator':
+					window_genomic_anno = add_snp_indicator_to_sequence_anno(window_genomic_anno)
+
 
 			# Use tf.gradient tape to compute gradients
 			with tf.GradientTape() as tape:
-				window_pred_tau = genomic_anno_to_gamma_model(window_genomic_anno, training=True)
-				loss_value, log_likelihoods = ldsc_tf_loss_fxn(window_chi_sq, window_pred_tau, samp_size, squared_ld, snp_weights, log_intercept_variable)
+				if model_type == 'sequence_conv_neural_net_delta' or model_type == 'sequence_layered_conv_neural_net_delta':
+					window_pred_tau = gamma_intercept_model(np.ones(squared_ld.shape[1]), training=True) + tf.math.square(genomic_anno_to_gamma_model(window_genomic_anno, training=True) - genomic_anno_to_gamma_model(window_genomic_anno_alt, training=True))
+					log_intercept_variable = log_intercept_model(np.ones(squared_ld.shape[0]), training=learn_intercept_bool)
+					loss_value, log_likelihoods = ldsc_tf_loss_fxn(window_chi_sq, window_pred_tau, samp_size, squared_ld, snp_weights, log_intercept_variable)
+				elif model_type == 'sequence_conv_neural_net_calibrated_delta' or model_type == 'sequence_conv_neural_net_linearly_calibrated_delta':
+					window_pred_tau = delta_calibration_nn(tf.math.square(genomic_anno_to_gamma_model(window_genomic_anno, training=True) - genomic_anno_to_gamma_model(window_genomic_anno_alt, training=True)), training=True)
+					log_intercept_variable = log_intercept_model(np.ones(squared_ld.shape[0]), training=learn_intercept_bool)
+					loss_value, log_likelihoods = ldsc_tf_loss_fxn(window_chi_sq, window_pred_tau, samp_size, squared_ld, snp_weights, log_intercept_variable)
+				elif model_type == 'sequence_conv_neural_net_nn_combine_sequences':
+					s1_pred = genomic_anno_to_gamma_model(window_genomic_anno, training=True)
+					s2_pred = genomic_anno_to_gamma_model(window_genomic_anno_alt, training=True)
+					new_anno = tf.concat([s1_pred,tf.math.square(s1_pred-s2_pred)],axis=1)
+					window_pred_tau = delta_calibration_nn(new_anno, training=True)
+					log_intercept_variable = log_intercept_model(np.ones(squared_ld.shape[0]), training=learn_intercept_bool)
+					loss_value, log_likelihoods = ldsc_tf_loss_fxn(window_chi_sq, window_pred_tau, samp_size, squared_ld, snp_weights, log_intercept_variable)
+				else:
+					window_pred_tau = genomic_anno_to_gamma_model(window_genomic_anno, training=True)
+					log_intercept_variable = log_intercept_model(np.ones(squared_ld.shape[0]), training=learn_intercept_bool)
+					loss_value, log_likelihoods = ldsc_tf_loss_fxn(window_chi_sq, window_pred_tau, samp_size, squared_ld, snp_weights, log_intercept_variable)
 			
 			# Define trainable variables
 			trainable_variables = genomic_anno_to_gamma_model.trainable_weights
 			if learn_intercept == 'learn_intercept':
-				trainable_variables.append(log_intercept_variable)
+				trainable_variables.append(log_intercept_model.trainable_weights[0])
+			if model_type == 'sequence_conv_neural_net_delta':
+				for ele in gamma_intercept_model.trainable_weights:
+					trainable_variables.append(ele)
+			if model_type == 'sequence_conv_neural_net_calibrated_delta' or model_type == 'sequence_conv_neural_net_linearly_calibrated_delta' or model_type == 'sequence_conv_neural_net_nn_combine_sequences':
+				for ele in delta_calibration_nn.trainable_weights:
+					trainable_variables.append(ele)
 			# Compute and apply gradients
 			grads = tape.gradient(loss_value, trainable_variables)
 			optimizer.apply_gradients(zip(grads, trainable_variables))
@@ -717,12 +1132,12 @@ def marginal_non_linear_sldsc(window_data, evaluation_window_data, samp_size, mo
 		#if np.mod(epoch_iter, 5) == 0:
 		if True:
 			# Save model data
-			genomic_anno_to_gamma_model.save(temp_output_model_root + '_' + str(epoch_iter))
-			np.save(temp_output_model_root + '_intercept_variable_' + str(epoch_iter) + '.npy', np.asarray(tf.math.softplus(log_intercept_variable)))
+			#genomic_anno_to_gamma_model.save(temp_output_model_root + '_' + str(epoch_iter) + '.keras')
+			#np.save(temp_output_model_root + '_intercept_variable_' + str(epoch_iter) + '.npy', np.asarray(tf.math.softplus(log_intercept_variable)))
 
 			# Compute weighted average evaluation loss
-			epoch_evaluation_loss, genomic_anno_to_gamma_model, log_intercept_variable = calculate_loss_on_evaluation_data(evaluation_window_data, genomic_anno_to_gamma_model, log_intercept_variable)
-			epoch_training_loss, genomic_anno_to_gamma_model, log_intercept_variable = calculate_loss_on_evaluation_data(window_data, genomic_anno_to_gamma_model, log_intercept_variable)
+			epoch_evaluation_loss, genomic_anno_to_gamma_model, log_intercept_variable = calculate_loss_on_evaluation_data(evaluation_window_data, genomic_anno_to_gamma_model, log_intercept_model, model_type, gamma_intercept_model, delta_calibration_nn)
+			epoch_training_loss, genomic_anno_to_gamma_model, log_intercept_variable = calculate_loss_on_evaluation_data(window_data, genomic_anno_to_gamma_model, log_intercept_model, model_type, gamma_intercept_model, delta_calibration_nn)
 			evaluation_loss.append(epoch_evaluation_loss)
 			training_loss.append(epoch_training_loss)
 
@@ -735,7 +1150,7 @@ def marginal_non_linear_sldsc(window_data, evaluation_window_data, samp_size, mo
 			np.savetxt(temp_output_model_root + '_' + str(epoch_iter) + '_evaluation_loss.txt', np.asarray(evaluation_loss).astype(str), fmt="%s",delimiter='\t')
 
 			# Print model parameters
-			intercept_variable = np.asarray(tf.math.softplus(log_intercept_variable))*1.0
+			intercept_variable = np.asarray(tf.math.softplus(log_intercept_variable[0,0]))*1.0
 			print('Intercept: ' + str(intercept_variable))
 			print('Sorted tau subset:')
 			print(np.sort(np.asarray(window_pred_tau[:,0])))
@@ -833,7 +1248,7 @@ learning_rate_str = sys.argv[10]
 
 
 
-max_epochs = 2000
+max_epochs = 400
 
 print(trait_name)
 print(model_type)
@@ -842,13 +1257,17 @@ print(evaluation_chromosome_type)
 print(ld_type)
 print(learn_intercept)
 
+
 # load in data
 training_chromosomes, evaluation_chromosomes = get_training_and_evaluation_chromosomes(training_chromosome_type, evaluation_chromosome_type)
+print(training_chromosomes)
+print(evaluation_chromosomes)
 window_data = load_in_data(input_dir, trait_name, ld_type, training_chromosomes)
 evaluation_window_data = load_in_data(input_dir, trait_name, ld_type, evaluation_chromosomes)
 
 # Output root stem
 model_output_root = output_dir + trait_name + '_nonlinear_sldsc_marginal_updates_gamma_likelihood_results_training_data_' + model_type + '_' + learn_intercept + '_' + ld_type + '_' + learning_rate_str + '_' + training_chromosome_type + '_train_' + evaluation_chromosome_type + '_eval' + '_annotations_to_gamma_model'
+
 
 # Model training
 genomic_anno_to_gamma_model = marginal_non_linear_sldsc(window_data, evaluation_window_data, samp_size, model_type, learn_intercept, model_output_root, float(learning_rate_str), max_epochs=max_epochs)

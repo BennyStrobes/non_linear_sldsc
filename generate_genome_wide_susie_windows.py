@@ -99,6 +99,8 @@ for chrom_num in range(1,23):
 		cur_pos = cur_pos + 1000000
 		first_itera = 'False'
 
+print(output_file)
+
 
 
 

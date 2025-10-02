@@ -54,10 +54,13 @@ for trait_name in study_names:
 	
 	# Min heritability threshold
 	if h2 > .1:
-		# print to output
-		t.write(trait_name + '\t' + trait_file + '\t' + str(sample_size) + '\t' + str(h2) + '\n')
+		if trait_name == 'blood_WHITE_COUNT' or trait_name == 'biochemistry_Cholesterol':
+			# print to output
+			t.write(trait_name + '\t' + trait_file + '\t' + str(sample_size) + '\t' + str(h2) + '\n')
 
 t.close()
+
+print(sumstat_summary_file)
 
 '''
 input_trait_file = output_dir + 'ukbb_hg38_sumstat_files.txt'

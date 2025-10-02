@@ -18,9 +18,6 @@ def extract_ukbb_trait_names_and_file(ukbb_trait_file):
 	for line in f:
 		line = line.rstrip()
 		data = line.split('\t')
-		if head_count == 0:
-			head_count = head_count + 1
-			continue
 		trait_names.append(data[0])
 		trait_files.append(data[1])
 		trait_sample_sizes.append(data[2])

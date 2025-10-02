@@ -5,7 +5,9 @@
 #SBATCH --mem=80G                         # Memory total in MiB (for all cores)
 
 source ~/.bash_profile
-
+module load python/2.7.12
+module load R/3.5.1
+module load python/3.7.4
 
 chrom_num="$1"
 genome_wide_window_file="$2"
@@ -17,12 +19,9 @@ ldsc_baseline_ld_hg19_annotation_dir="$7"
 ukbb_in_sample_genotype_dir="$8"
 
 echo $chrom_num
-
 echo "OUT OF SAMPLE LD"
-
 python3 preprocess_ukbb_data_for_genome_wide_susie_analysis.py $chrom_num $genome_wide_window_file $ukbb_sumstats_hg19_dir $ref_1kg_genotype_dir $ukbb_in_sample_ld_dir $ukbb_preprocessed_for_genome_wide_susie_dir $ldsc_baseline_ld_hg19_annotation_dir
 
 
 echo "IN SAMPLE LD"
-
 python3 preprocess_ukbb_data_for_genome_wide_susie_analysis_with_in_sample_ld.py $chrom_num $ukbb_preprocessed_for_genome_wide_susie_dir $ukbb_in_sample_ld_dir $ukbb_in_sample_genotype_dir

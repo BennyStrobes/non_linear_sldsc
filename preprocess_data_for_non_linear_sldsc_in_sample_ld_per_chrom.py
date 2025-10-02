@@ -231,6 +231,78 @@ def extract_dictionary_list_of_all_regression_snps(input_window_file, hm3_snps):
 	return regression_snps
 
 
+def get_window_sequence_from_samtools_output(temp_fasta_output_file):
+	f = open(temp_fasta_output_file)
+	arr = []
+	for line in f:
+		line = line.rstrip()
+		if line.startswith('>chr'):
+			continue
+		for nucleotide in line:
+			arr.append(nucleotide)
+	f.close()
+
+	return np.asarray(arr)
+
+def error_check_to_make_sure_variant_id_reference_matches_fasta_reference(window_sequence, window_start, variant_ids):
+	refs = []
+	alts = []
+	for ii,variant_id in enumerate(variant_ids):
+		variant_info = variant_id.split('_')
+		variant_position = int(variant_info[1])
+		variant_allele1 = variant_info[3]
+		variant_allele2 = variant_info[2]
+		fasta_reference_allele = window_sequence[variant_position - window_start]
+		if variant_allele1.lower() != fasta_reference_allele.lower() and variant_allele2.lower() != fasta_reference_allele.lower():
+			print('allele mismatch eroror')
+			pdb.set_trace()
+		refs.append(fasta_reference_allele.lower())
+		if variant_allele1.lower() == fasta_reference_allele.lower():
+			alts.append(variant_allele2.lower())
+		else:
+			alts.append(variant_allele1.lower())
+
+	return np.asarray(refs), np.asarray(alts)
+
+def extract_snp_sequence_encoding(window_sequence, variant_ids, window_start, flanking_distance=200):
+	mapping = {}
+	mapping['G'] = 0
+	mapping['g'] = 0
+	mapping['A'] = 1
+	mapping['a'] = 1
+	mapping['C'] = 2
+	mapping['c'] = 2
+	mapping['T'] = 3
+	mapping['t'] = 3
+	
+	encoding = []
+	for ii,variant_id in enumerate(variant_ids):
+		variant_sequence_encoding = np.zeros((flanking_distance*2 + 1, 4)).astype(int)
+
+		variant_info = variant_id.split('_')
+		variant_position = int(variant_info[1])
+		variant_allele1 = variant_info[3]
+		variant_allele2 = variant_info[2]
+
+		fasta_reference_allele = window_sequence[variant_position - window_start]
+
+		variant_seq = window_sequence[(variant_position-window_start-flanking_distance):(variant_position-window_start+flanking_distance+1)]
+
+		if len(variant_seq) != (flanking_distance*2+1):
+			print('assumpition eroror')
+			pdb.set_trace()
+
+		# Now convert strings to one hot encoding
+		for ii,nucleotide in enumerate(variant_seq):
+			variant_sequence_encoding[ii, mapping[nucleotide]] = 1
+		
+		# Add variant encoding to global vector
+		encoding.append(variant_sequence_encoding)
+
+	# Convert to numpy array
+	encoding = np.asarray(encoding)
+
+	return encoding
 
 
 ukbb_preprocessed_for_genome_wide_susie_dir = sys.argv[1]  # Input dir
@@ -238,6 +310,7 @@ ldsc_baseline_ld_hg19_annotation_dir = sys.argv[2]  # Input dir (genomic annotat
 output_dir = sys.argv[3]
 chrom_num = sys.argv[4]
 trait_name = sys.argv[5]
+reference_genome_fasta_dir = sys.argv[6]
 
 # First, load in hm3 snps
 hm3_snp_file = ldsc_baseline_ld_hg19_annotation_dir + 'baselineLD.' + chrom_num + '.l2.ldscore.gz'
@@ -254,11 +327,13 @@ input_window_file = ukbb_preprocessed_for_genome_wide_susie_dir + 'genome_wide_s
 ### snps that are found in the middle of a window AND are hm3 snps
 regression_snps = extract_dictionary_list_of_all_regression_snps(input_window_file, hm3_snps)
 
+# Temporary output file for fasta
+temp_fasta_output_file = output_dir + 'temp_fasta_output_' + chrom_num + '.txt'
 
 # Open file handle for output file
 output_window_file = output_dir + 'genome_wide_susie_windows_and_non_linear_sldsc_processed_data_in_sample_ld_chrom_' + chrom_num + '.txt'
 t = open(output_window_file,'w')
-t.write('window_name\tvariant_id\tbeta\tbeta_se\tgenomic_annotation\tmiddle_variant_indices\tregression_variant_indices\tmiddle_regression_variant_indices\tsquared_ld\tregression_snp_squared_ld\n')
+t.write('window_name\tvariant_id\tbeta\tbeta_se\tgenomic_annotation\tmiddle_variant_indices\tregression_variant_indices\tmiddle_regression_variant_indices\tsquared_ld\tregression_snp_squared_ld\tsequence_matrix\treference_alleles\n')
 
 # Open file handle for input file
 f = open(input_window_file)
@@ -293,7 +368,7 @@ for line in f:
 	variant_ids = np.loadtxt(variant_file,dtype=str)
 	variant_indices = extract_variant_indices_that_we_have_genomic_annotations_for(variant_ids, variant_to_genomic_annotations)
 	variant_ids = variant_ids[variant_indices]
-	
+
 	# study file
 	all_studies = np.loadtxt(study_file,dtype=str)
 
@@ -358,6 +433,28 @@ for line in f:
 		beta_se_study_output_file = window_output_root + 'beta_se_' + study_name + '.npy'
 		np.save(beta_se_study_output_file, (all_beta_std_err[study_index,:]).astype('float32'))
 
+	# Use samtooms to get sequence in this window
+	buffer_window_start = window_start - 500
+	buffer_window_end = window_end + 500
+	samtools_fasta_parse_string = 'samtools faidx ' + reference_genome_fasta_dir + 'chr' + str(chrom_num) + '.fa chr' + str(chrom_num) + ':' + str(buffer_window_start) + '-' + str(buffer_window_end) + ' > ' + temp_fasta_output_file
+	os.system(samtools_fasta_parse_string)
+	window_sequence = get_window_sequence_from_samtools_output(temp_fasta_output_file)
+
+	if 'N' in window_sequence or 'n' in window_sequence:
+		print('N in window: skipping for now')
+		continue
+	if len(window_sequence) != 3001001:
+		print('Extract wrong sized window sequence: skipping for now')
+		continue
+
+	# Extract reference and alternative alleles
+	# QUick error check to make sure variant id reference matches fasta reference
+	reference_alleles, alt_alleles = error_check_to_make_sure_variant_id_reference_matches_fasta_reference(window_sequence, buffer_window_start, variant_ids)
+
+	# Extract sequencing encoding for each snp
+	sequence_encoding = extract_snp_sequence_encoding(window_sequence, variant_ids, buffer_window_start, flanking_distance=30)
+
+
 	beta_output_stem = window_output_root + 'beta_'
 	beta_se_output_stem = window_output_root + 'beta_se_'
 
@@ -385,9 +482,16 @@ for line in f:
 	regression_snp_squared_ld_matrix_output_file = window_output_root + 'regression_snp_squared_ld.npy'
 	np.save(regression_snp_squared_ld_matrix_output_file, subset_ld_sq.astype('float32'))
 
+	# Sequence encoding matrix
+	sequence_encoding_matrix_output_file = window_output_root + 'sequence_encoding_matrix.npy'
+	np.save(sequence_encoding_matrix_output_file, sequence_encoding)
+
+	# Reference alleles
+	reference_allele_output_file = window_output_root + 'referene_alleles.npy'
+	np.save(reference_allele_output_file, reference_alleles)
 
 	# Print file names to global output file
-	t.write(window_name + '\t' + variant_id_output_file + '\t' + beta_output_stem + '\t' + beta_se_output_stem + '\t' + genomic_anno_output_file + '\t' + middle_window_output_file  + '\t' + regression_indices_window_output_file + '\t' + middle_regression_indices_window_output_file + '\t' + squared_ld_matrix_output_file + '\t' + regression_snp_squared_ld_matrix_output_file + '\n')
+	t.write(window_name + '\t' + variant_id_output_file + '\t' + beta_output_stem + '\t' + beta_se_output_stem + '\t' + genomic_anno_output_file + '\t' + middle_window_output_file  + '\t' + regression_indices_window_output_file + '\t' + middle_regression_indices_window_output_file + '\t' + squared_ld_matrix_output_file + '\t' + regression_snp_squared_ld_matrix_output_file + '\t' + sequence_encoding_matrix_output_file + '\t' + reference_allele_output_file + '\n')
 
 f.close()
 t.close()

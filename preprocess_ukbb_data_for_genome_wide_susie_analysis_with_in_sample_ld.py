@@ -93,6 +93,7 @@ def parse_snp_range(snp_range):
 def create_mapping_from_rsid_to_in_sample_variant_index(chrom_pvar_file):
 	f = open(chrom_pvar_file)
 	dicti = {}
+	rs_id_to_alleles = {}
 	head_count = 0
 	indexer = 0
 	for line in f:
@@ -102,14 +103,18 @@ def create_mapping_from_rsid_to_in_sample_variant_index(chrom_pvar_file):
 			head_count = head_count + 1
 			continue
 		rsid = data[2]
+		alleles = data[4] + '_' + data[3]
+		if rsid in rs_id_to_alleles:
+			print('assumption eroror')
+			pdb.set_trace()
+		rs_id_to_alleles[rsid] = alleles
 		if rsid in dicti:
 			print('assumption eroror')
 			pdb.set_trace()
 		dicti[rsid] = indexer
 		indexer = indexer + 1
 	f.close()
-	return dicti
-
+	return dicti, rs_id_to_alleles
 def extract_overlapping_variants(window_rsids, rs_id_to_in_sample_variant):
 	valid_window_indices = []
 	in_sample_variant_indices = []
@@ -145,13 +150,17 @@ def extract_ld_mat_from_in_sample_ld(sample_ld_variant_indices, ukbb_in_sample_l
 	ld_mat = np.zeros((num_var, num_var)) + -2000.0
 
 	for file_name in os.listdir(ukbb_in_sample_ld_dir):
-		if file_name.startswith('ukb_imp_v3.c' + chrom_num + '_') == False:
+		if file_name.startswith('ukb_imp_v3_chimp.c' + chrom_num + '_') == False:
+			continue
+		if file_name.endswith('.compute_ld.sbatch.log'):
 			continue
 		full_file_name = ukbb_in_sample_ld_dir + file_name
 
 		file_info = file_name.split('_')
-		file_index_start = int(file_info[3].split('s')[1])
-		file_index_end = int(file_info[4].split('e')[1])
+
+
+		file_index_start = int(file_info[4].split('s')[1])
+		file_index_end = int(file_info[5].split('e')[1])
 
 		if indices_dont_lie_in_file(sample_ld_variant_indices, file_index_start, file_index_end):
 			continue
@@ -182,8 +191,8 @@ ukbb_in_sample_genotype_dir = sys.argv[4]
 
 
 # RS_ID to in_sample variant INDEX
-chrom_pvar_file = ukbb_in_sample_genotype_dir + 'ukb_imp_chr' + chrom_num + '_v3.pvar'
-rs_id_to_in_sample_variant = create_mapping_from_rsid_to_in_sample_variant_index(chrom_pvar_file)
+chrom_pvar_file = ukbb_in_sample_genotype_dir + 'ukb_imp_chr' + chrom_num + '_v3_chimp.pvar'
+rs_id_to_in_sample_variant, rs_id_to_in_sample_alleles = create_mapping_from_rsid_to_in_sample_variant_index(chrom_pvar_file)
 
 
 input_window_file = ukbb_preprocessed_for_genome_wide_susie_dir + 'genome_wide_susie_windows_and_processed_data_chrom_' + chrom_num + '.txt'
@@ -228,8 +237,10 @@ for line in f:
 	# Previous window rs_ids
 	window_rsids = np.loadtxt(rsid_file, dtype=str)
 
+
 	# Extract valid window indices, as well as sample ld variant indices corresponding to those
 	valid_window_indices, sample_ld_variant_indices = extract_overlapping_variants(window_rsids, rs_id_to_in_sample_variant)
+
 
 	if len(valid_window_indices) < 5000:
 		print('************')

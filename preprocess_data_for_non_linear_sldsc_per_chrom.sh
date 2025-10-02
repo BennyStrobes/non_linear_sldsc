@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH -c 1                               # Request one core
-#SBATCH -t 0-10:00                         # Runtime in D-HH:MM format
+#SBATCH -t 0-4:00                         # Runtime in D-HH:MM format
 #SBATCH -p short                           # Partition to run in
-#SBATCH --mem=40G                         # Memory total in MiB (for all cores)
+#SBATCH --mem=20G                         # Memory total in MiB (for all cores)
 
 
 
@@ -12,16 +12,19 @@ ldsc_baseline_ld_hg19_annotation_dir="$2"
 preprocessed_data_for_non_linear_sldsc_dir="$3"
 chrom_num="$4"
 trait_name="$5"
+reference_genome_fasta_dir="$6"
 
 module load gcc/6.2.0
 module load python/3.6.0
 source /n/groups/price/ben/environments/tensor_flow_cpu/bin/activate
+module load samtools/1.15.1
 
 
 echo "in sample"
-python3 preprocess_data_for_non_linear_sldsc_in_sample_ld_per_chrom.py $ukbb_preprocessed_for_genome_wide_susie_dir $ldsc_baseline_ld_hg19_annotation_dir $preprocessed_data_for_non_linear_sldsc_dir $chrom_num $trait_name
-
 if false; then
+python3 preprocess_data_for_non_linear_sldsc_in_sample_ld_per_chrom.py $ukbb_preprocessed_for_genome_wide_susie_dir $ldsc_baseline_ld_hg19_annotation_dir $preprocessed_data_for_non_linear_sldsc_dir $chrom_num $trait_name $reference_genome_fasta_dir
+fi
+
 echo "1kg_r_squared_true"
 r_squared_correction="True"
 python3 preprocess_data_for_non_linear_sldsc_per_chrom.py $ukbb_preprocessed_for_genome_wide_susie_dir $ldsc_baseline_ld_hg19_annotation_dir $preprocessed_data_for_non_linear_sldsc_dir $chrom_num $trait_name $r_squared_correction
@@ -30,4 +33,3 @@ python3 preprocess_data_for_non_linear_sldsc_per_chrom.py $ukbb_preprocessed_for
 echo "1kg_r_squared_false"
 r_squared_correction="False"
 python3 preprocess_data_for_non_linear_sldsc_per_chrom.py $ukbb_preprocessed_for_genome_wide_susie_dir $ldsc_baseline_ld_hg19_annotation_dir $preprocessed_data_for_non_linear_sldsc_dir $chrom_num $trait_name $r_squared_correction
-fi

@@ -6,6 +6,9 @@
 
 
 source ~/.bash_profile
+module load python/2.7.12
+module load R/3.5.1
+module load python/3.7.4
 
 ukbb_sumstats_hg19_dir="$1"
 ref_1kg_genotype_dir="$2"
@@ -41,6 +44,4 @@ for chrom_num in $(seq 1 22); do
 done
 fi
 
-if false; then
 python3 merge_susie_input_window_file_across_chromosomes.py $ukbb_preprocessed_for_genome_wide_susie_dir
-fi
